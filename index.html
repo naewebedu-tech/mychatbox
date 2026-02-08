@@ -4,72 +4,60 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Secure Chat</title>
+    <title>Chat Login</title>
     <style>
         body { font-family: sans-serif; background: #0b0e11; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .box { background: #15191c; padding: 30px; border-radius: 15px; text-align: center; width: 90%; max-width: 350px; border: 1px solid #2d3439; }
-        .hidden { display: none !important; }
-        button { background: #00a884; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 8px; border: 1px solid #2d3439; background: #202c33; color: white; box-sizing: border-box; }
+        .login-card { background: #1c1f23; padding: 25px; border-radius: 12px; width: 320px; text-align: center; border: 1px solid #333; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 6px; border: 1px solid #444; background: #2c3136; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border-radius: 6px; border: none; background: #00a884; color: white; font-weight: bold; cursor: pointer; }
+        #fingerprint { font-size: 10px; color: #666; margin-top: 15px; display: block; word-break: break-all; }
     </style>
 </head>
 <body>
 
-    <div id="install-ui" class="box">
-        <h2>Install Required</h2>
-        <p style="color: #8696a0;">Chat is locked until you install the app to your device.</p>
-        <button id="btn-install">Install App</button>
-    </div>
+    <div class="login-card">
+        <h3>Secure Access</h3>
+        <p style="font-size: 0.8rem; color: #888;">Hardware Fingerprinting Active</p>
+        
+        <input type="password" id="user-pass" placeholder="Enter Password">
+        <button id="login-btn">Login</button>
 
-    <div id="chat-ui" class="box hidden">
-        <h2>Device Verified</h2>
-        <input type="password" id="pass" placeholder="Enter Password">
-        <button id="btn-login">Open Chat</button>
-        <code id="fingerprint" style="font-size: 10px; display: block; margin-top: 10px; color: #555;"></code>
+        <span id="fingerprint">ID: Loading...</span>
     </div>
 
     <script>
-        let deferredPrompt;
-
-        // 1. REGISTER SERVICE WORKER
+        // Register the service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js');
         }
 
-        // 2. CHECK INSTALLATION STATUS
-        function checkAppMode() {
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-            if (isStandalone) {
-                document.getElementById('install-ui').classList.add('hidden');
-                document.getElementById('chat-ui').classList.remove('hidden');
-                generateFingerprint();
-            }
+        // Generate the unique Device ID
+        async function getID() {
+            const data = `${navigator.userAgent}-${screen.width}x${screen.height}-${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+            const encoder = new TextEncoder();
+            const buffer = encoder.encode(data);
+            const hash = await crypto.subtle.digest('SHA-256', buffer);
+            const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+            const shortID = hex.substring(0, 16).toUpperCase();
+            document.getElementById('fingerprint').innerText = "DEVICE ID: " + shortID;
+            return shortID;
         }
 
-        // 3. CAPTURE INSTALL PROMPT
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-        });
+        // Handle Login
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const input = document.getElementById('user-pass').value;
+            const deviceID = await getID();
 
-        document.getElementById('btn-install').addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
+            // SIMPLE PASSWORD CHECK
+            if (input === "chat123") {
+                alert("SUCCESS!\nAccess granted for device: " + deviceID);
+                // window.location.href = "your-chat-link.html"; 
             } else {
-                alert("Installation not ready. If on iPhone, use 'Add to Home Screen' in Safari.");
+                alert("WRONG PASSWORD");
             }
         });
 
-        // 4. FINGERPRINTING LOGIC
-        async function generateFingerprint() {
-            const val = `${navigator.userAgent}|${screen.width}x${screen.height}`;
-            const msgBuffer = new TextEncoder().encode(val);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-            document.getElementById('fingerprint').innerText = "ID: " + hashHex.substring(0, 16);
-        }
-
-        checkAppMode();
+        getID();
     </script>
 </body>
 </html>
