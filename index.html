@@ -3,48 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <title>Secure Chat</title>
     <style>
         body { font-family: sans-serif; background: #0b0e11; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .box { background: #15191c; padding: 30px; border-radius: 15px; text-align: center; width: 90%; max-width: 350px; border: 1px solid #2d3439; }
         .hidden { display: none !important; }
-        button { background: #00a884; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
+        button { background: #00a884; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 8px; border: 1px solid #2d3439; background: #202c33; color: white; box-sizing: border-box; }
     </style>
 </head>
 <body>
 
     <div id="install-ui" class="box">
-        <h2>Install Chat</h2>
-        <p>Click below to install and unlock the chat.</p>
-        <button id="btn-install">Install Now</button>
+        <h2>Install Required</h2>
+        <p style="color: #8696a0;">Chat is locked until you install the app to your device.</p>
+        <button id="btn-install">Install App</button>
     </div>
 
     <div id="chat-ui" class="box hidden">
-        <h2>Chat Unlocked</h2>
-        <input type="password" id="pw" style="width:100%; padding:10px; margin:10px 0;" placeholder="Password">
-        <button onclick="alert('Logged in!')">Login</button>
-        <p id="fid" style="font-size: 10px; color: gray; margin-top: 10px;"></p>
+        <h2>Device Verified</h2>
+        <input type="password" id="pass" placeholder="Enter Password">
+        <button id="btn-login">Open Chat</button>
+        <code id="fingerprint" style="font-size: 10px; display: block; margin-top: 10px; color: #555;"></code>
     </div>
 
     <script>
         let deferredPrompt;
 
-        // 1. Register Service Worker (Fixes 404)
+        // 1. REGISTER SERVICE WORKER
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
+            navigator.serviceWorker.register('/sw.js');
         }
 
-        // 2. Check if already installed
-        function checkStatus() {
-            if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+        // 2. CHECK INSTALLATION STATUS
+        function checkAppMode() {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+            if (isStandalone) {
                 document.getElementById('install-ui').classList.add('hidden');
                 document.getElementById('chat-ui').classList.remove('hidden');
-                document.getElementById('fid').innerText = "Device: " + screen.width + "x" + screen.height;
+                generateFingerprint();
             }
         }
 
-        // 3. Simple Install Button
+        // 3. CAPTURE INSTALL PROMPT
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
@@ -54,11 +56,20 @@
             if (deferredPrompt) {
                 deferredPrompt.prompt();
             } else {
-                alert("Please wait a moment for the browser to load the app, or use 'Add to Home Screen' in your browser menu.");
+                alert("Installation not ready. If on iPhone, use 'Add to Home Screen' in Safari.");
             }
         });
 
-        checkStatus();
+        // 4. FINGERPRINTING LOGIC
+        async function generateFingerprint() {
+            const val = `${navigator.userAgent}|${screen.width}x${screen.height}`;
+            const msgBuffer = new TextEncoder().encode(val);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+            document.getElementById('fingerprint').innerText = "ID: " + hashHex.substring(0, 16);
+        }
+
+        checkAppMode();
     </script>
 </body>
 </html>
