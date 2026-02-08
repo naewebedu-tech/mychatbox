@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageCircle, Trash2, Lock, Unlock, User, Users } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Lock, Unlock, User, Users, XCircle } from 'lucide-react'; // Added XCircle
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
@@ -11,6 +11,7 @@ import {
   collection, 
   addDoc, 
   deleteDoc,
+  getDocs, // Added for clearing chat
   doc,
   query, 
   orderBy, 
@@ -33,8 +34,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- HELPER: GET COLOR FROM NAME ---
-// Assigns a consistent color to a username so "John" is always Red, etc.
 const getNameColor = (name) => {
   const colors = [
     'text-red-600', 'text-orange-600', 'text-amber-600', 
@@ -85,14 +84,26 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // 3. Delete
+  // 3. Delete Single Message
   const handleDelete = async (id) => {
     if (isAdmin && confirm("Delete message?")) {
       try { await deleteDoc(doc(db, "messages", id)); } catch (e) {}
     }
   };
 
-  // 4. Name Setup
+  // 4. NEW: Clear Entire Chat
+  const clearChat = async () => {
+    if (!isAdmin) return;
+    if (confirm("⚠️ DANGER: This will delete ALL messages for EVERYONE forever.\n\nAre you sure?")) {
+      const q = query(collection(db, "messages"));
+      const snapshot = await getDocs(q);
+      snapshot.forEach((doc) => {
+        deleteDoc(doc.ref);
+      });
+    }
+  };
+
+  // 5. Name Setup & Admin
   const handleSaveName = (e) => {
     e.preventDefault();
     if (username.trim()) {
@@ -125,11 +136,25 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Change Name */}
           <button onClick={() => setShowNameModal(true)} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100" title="Change Name">
             <User size={20}/>
           </button>
-          <button onClick={toggleAdmin} className={`p-2 rounded-full ${isAdmin ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-400'}`}>
+          
+          {/* NEW: Clear Chat Button (Admin Only) */}
+          {isAdmin && (
+            <button 
+                onClick={clearChat}
+                className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1"
+                title="Clear All Messages"
+            >
+                <Trash2 size={20} />
+            </button>
+          )}
+
+          {/* Admin Lock */}
+          <button onClick={toggleAdmin} className={`p-2 rounded-full ${isAdmin ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>
             {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
           </button>
         </div>
@@ -144,8 +169,6 @@ export default function App() {
             <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message`}>
               <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[60%]`}>
                 
-                {/* --- THE DIFFERENTIATOR --- */}
-                {/* If it's NOT me, show their name in a specific color above the bubble */}
                 {!isMe && (
                   <span className={`text-[11px] font-bold ml-12 mb-1 ${getNameColor(msg.displayName || 'Anonymous')}`}>
                     {msg.displayName || "Anonymous"}
@@ -153,10 +176,8 @@ export default function App() {
                 )}
 
                 <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {/* Avatar */}
                   <img src={msg.photoURL} alt="avatar" className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover"/>
                   
-                  {/* Message Bubble */}
                   <div className="relative">
                     <div className={`
                       px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words
@@ -168,13 +189,13 @@ export default function App() {
                       {msg.text}
                     </div>
 
-                    {/* Delete Button (Admin Only) */}
                     {isAdmin && (
                       <button 
                         onClick={() => handleDelete(msg.id)}
                         className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-10' : '-right-10'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity`}
+                        title="Delete this message"
                       >
-                        <Trash2 size={16} />
+                        <XCircle size={16} />
                       </button>
                     )}
                   </div>
@@ -203,31 +224,28 @@ export default function App() {
 
       {/* NAME MODAL */}
       {showNameModal && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center">
             <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
               <Users size={32} />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Join the Chat</h2>
-            <p className="text-gray-500 mb-6 text-sm">Pick a username so others know who you are.</p>
-            
             <form onSubmit={handleSaveName}>
               <input 
                 autoFocus
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Ex: IronMan, Sarah, Guest..."
+                placeholder="Ex: IronMan, Sarah..."
                 maxLength={15}
-                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 mb-4 outline-none transition-all font-bold text-center text-lg text-gray-800 placeholder:font-normal"
+                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 mb-4 outline-none font-bold text-center text-lg text-gray-800"
               />
-              <button type="submit" disabled={!username.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-200 active:scale-95">
+              <button type="submit" disabled={!username.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg">
                 Start Chatting
               </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
