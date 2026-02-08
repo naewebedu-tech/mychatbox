@@ -1,103 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="manifest" href="manifest.json">
-    <title>Secure Chat</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #1e1e1e; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 400px; }
-        button { background: #3498db; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #333; background: #222; color: white; box-sizing: border-box; }
-        .hidden { display: none !important; }
-    </style>
-</head>
-<body>
-
-    <div id="install-screen" class="card">
-        <h2>Installation Required</h2>
-        <p>For security and device fingerprinting, this chat must be installed as an app.</p>
-        <button id="btn-install">Install to Device</button>
-    </div>
-
-    <div id="chat-screen" class="card hidden">
-        <h2>Secure Login</h2>
-        <p>Device Fingerprint Detected</p>
-        <input type="password" id="password" placeholder="Enter Secure Password">
-        <button id="btn-login">Open Secure Chat</button>
-    </div>
-
-    <script>
-        let deferredPrompt;
-        const installScreen = document.getElementById('install-screen');
-        const chatScreen = document.getElementById('chat-screen');
-        const btnInstall = document.getElementById('btn-install');
-        const btnLogin = document.getElementById('btn-login');
-
-        // REGISTER SERVICE WORKER
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
-        }
-
-        // STEP 1: DETECT IF RUNNING AS INSTALLED APP
-        function checkAppStatus() {
-            const isInstalled = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-            if (isInstalled) {
-                installScreen.classList.add('hidden');
-                chatScreen.classList.remove('hidden');
-            }
-        }
-        checkAppStatus();
-
-        // STEP 2: HANDLE INSTALLATION BUTTON
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-        });
-
-        btnInstall.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    alert("Installed! Open the app from your home screen.");
-                }
-            } else {
-                alert("Installation prompt not available. You may already have it installed.");
-            }
-        });
-
-        // STEP 3: FINGERPRINTING LOGIC
-        async function getFingerprint() {
-            const data = {
-                ua: navigator.userAgent,
-                lang: navigator.language,
-                depth: screen.colorDepth,
-                res: `${screen.width}x${screen.height}`,
-                tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                cores: navigator.hardwareConcurrency || 'unknown'
-            };
-            const str = JSON.stringify(data);
-            const msgBuffer = new TextEncoder().encode(str);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
-        // STEP 4: LOGIN EXECUTION
-        btnLogin.addEventListener('click', async () => {
-            const password = document.getElementById('password').value;
-            const fingerprint = await getFingerprint();
-
-            if (!password) return alert("Please enter a password");
-
-            // LOGIC: Send to your server API
-            console.log("Device ID:", fingerprint);
-            console.log("Password:", password);
-            
-            alert("Verification Sent!\nFingerprint: " + fingerprint.substring(0, 10) + "...");
-            // window.location.href = "/chat-room"; // Redirect after server success
-        });
-    </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>my-chat-app</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
