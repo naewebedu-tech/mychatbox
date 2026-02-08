@@ -1,63 +1,76 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="/manifest.json">
-    <title>Chat Login</title>
     <style>
-        body { font-family: sans-serif; background: #0b0e11; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-card { background: #1c1f23; padding: 25px; border-radius: 12px; width: 320px; text-align: center; border: 1px solid #333; }
-        input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 6px; border: 1px solid #444; background: #2c3136; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; border-radius: 6px; border: none; background: #00a884; color: white; font-weight: bold; cursor: pointer; }
-        #fingerprint { font-size: 10px; color: #666; margin-top: 15px; display: block; word-break: break-all; }
+        #chat-interface { display: none; } /* Hidden by default */
+        #install-screen { display: flex; flex-direction: column; align-items: center; padding: 50px; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div class="login-card">
-        <h3>Secure Access</h3>
-        <p style="font-size: 0.8rem; color: #888;">Hardware Fingerprinting Active</p>
-        
-        <input type="password" id="user-pass" placeholder="Enter Password">
-        <button id="login-btn">Login</button>
+    <div id="install-screen">
+        <h1>Secure Chat</h1>
+        <p>This chat requires a hardware fingerprint. Please install the app to proceed.</p>
+        <button id="install-btn" style="padding: 15px; font-size: 1.2rem;">Install Chat App</button>
+    </div>
 
-        <span id="fingerprint">ID: Loading...</span>
+    <div id="chat-interface">
+        <h2>Welcome Back</h2>
+        <input type="password" id="pass" placeholder="Enter Password">
+        <button onclick="attemptLogin()">Login</button>
     </div>
 
     <script>
-        // Register the service worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js');
+        let deferredPrompt;
+        const installBtn = document.getElementById('install-btn');
+        const chatUI = document.getElementById('chat-interface');
+        const installUI = document.getElementById('install-screen');
+
+        // 1. CHECK IF ALREADY INSTALLED (STANDALONE MODE)
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+            installUI.classList.add('hidden');
+            chatUI.style.display = 'block';
         }
 
-        // Generate the unique Device ID
-        async function getID() {
-            const data = `${navigator.userAgent}-${screen.width}x${screen.height}-${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
-            const encoder = new TextEncoder();
-            const buffer = encoder.encode(data);
-            const hash = await crypto.subtle.digest('SHA-256', buffer);
-            const hex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-            const shortID = hex.substring(0, 16).toUpperCase();
-            document.getElementById('fingerprint').innerText = "DEVICE ID: " + shortID;
-            return shortID;
-        }
+        // 2. CAPTURE INSTALL PROMPT
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
 
-        // Handle Login
-        document.getElementById('login-btn').addEventListener('click', async () => {
-            const input = document.getElementById('user-pass').value;
-            const deviceID = await getID();
-
-            // SIMPLE PASSWORD CHECK
-            if (input === "chat123") {
-                alert("SUCCESS!\nAccess granted for device: " + deviceID);
-                // window.location.href = "your-chat-link.html"; 
-            } else {
-                alert("WRONG PASSWORD");
+        installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    alert("App installed! Please open it from your home screen.");
+                }
             }
         });
 
-        getID();
+        // 3. FINGERPRINT & LOGIN
+        async function attemptLogin() {
+            const fingerprint = await generateFingerprint();
+            const password = document.getElementById('pass').value;
+
+            // Send to your backend
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password, fingerprint })
+            });
+            
+            if(res.ok) alert("Access Granted");
+        }
+
+        async function generateFingerprint() {
+            const data = `${navigator.userAgent}-${screen.width}-${new Date().getTimezoneOffset()}`;
+            const msgBuffer = new TextEncoder().encode(data);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
     </script>
 </body>
 </html>
