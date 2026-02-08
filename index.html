@@ -1,13 +1,98 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>my-chat-app</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <title>Fingerprint Chat</title>
+    <style>
+        body { font-family: sans-serif; background: #0b0e11; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: #15191c; padding: 30px; border-radius: 15px; text-align: center; width: 90%; max-width: 400px; border: 1px solid #2d3439; }
+        .hidden { display: none !important; }
+        button { background: #00a884; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #2d3439; background: #202c33; color: white; box-sizing: border-box; }
+        #chat-area { height: 200px; background: #0b141a; border: 1px solid #2d3439; margin-bottom: 10px; border-radius: 8px; overflow-y: auto; padding: 10px; text-align: left; }
+    </style>
+</head>
+<body>
+
+    <div id="install-ui" class="box">
+        <h2>Installation Required</h2>
+        <p>This secure chat requires a hardware fingerprint. Please install it to your home screen to unlock access.</p>
+        <button id="btn-install">Install App</button>
+    </div>
+
+    <div id="chat-ui" class="box hidden">
+        <h2>Secure Chat</h2>
+        <div id="chat-area">
+            <small style="color: #8696a0;">Device ID: <span id="did">Detecting...</span></small>
+            <p>Welcome! Type your password to unlock the message stream.</p>
+        </div>
+        <input type="password" id="pass" placeholder="Enter Chat Password">
+        <button id="btn-open">Unlock Chat</button>
+    </div>
+
+    <script>
+        let deferredPrompt;
+        const installUI = document.getElementById('install-ui');
+        const chatUI = document.getElementById('chat-ui');
+
+        // 1. REGISTER SERVICE WORKER (Needed for Vercel/PWA)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+
+        // 2. CHECK IF INSTALLED
+        function checkInstallation() {
+            const isInstalled = window.matchMedia('(display-mode: standalone)').matches 
+                                || window.navigator.standalone 
+                                || document.referrer.includes('android-app://');
+            
+            if (isInstalled) {
+                installUI.classList.add('hidden');
+                chatUI.classList.remove('hidden');
+                initFingerprint();
+            }
+        }
+
+        // 3. CAPTURE THE INSTALL PROMPT
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+
+        document.getElementById('btn-install').addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') alert("Installed! Now open from your Home Screen.");
+            } else {
+                alert("Installation failed or already installed. Try the 'Add to Home Screen' option in your browser menu.");
+            }
+        });
+
+        // 4. GENERATE FINGERPRINT (Only runs if installed)
+        async function initFingerprint() {
+            const screen = window.screen;
+            const data = `${navigator.userAgent}|${screen.width}x${screen.height}|${new Date().getTimezoneOffset()}`;
+            const msgBuffer = new TextEncoder().encode(data);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+            document.getElementById('did').innerText = hashHex.substring(0, 16);
+        }
+
+        // 5. BUTTON LOGIC
+        document.getElementById('btn-open').addEventListener('click', () => {
+            const pass = document.getElementById('pass').value;
+            if(pass === "YOUR_CHAT_PASSWORD") { // Replace with your actual password logic
+                alert("Chat Unlocked for this Device!");
+            } else {
+                alert("Invalid Password.");
+            }
+        });
+
+        // Run check on load
+        checkInstallation();
+    </script>
+</body>
 </html>
