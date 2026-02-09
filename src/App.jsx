@@ -10,6 +10,7 @@ import {
   getFirestore, 
   collection, 
   addDoc, 
+  setDoc, // Added setDoc
   updateDoc,
   arrayUnion,
   deleteDoc,
@@ -63,69 +64,103 @@ export default function App() {
   const [username, setUsername] = useState(() => localStorage.getItem('chat_username') || '');
   const [deviceId] = useState(getDeviceId());
   const [messages, setMessages] = useState([]);
+  const [typingUsers, setTypingUsers] = useState([]); // List of people typing
   const [newMessage, setNewMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [showNameModal, setShowNameModal] = useState(!localStorage.getItem('chat_username'));
   const [, setTick] = useState(0); 
   const dummy = useRef();
+  const typingTimeoutRef = useRef(null); // Ref to manage typing debounce
 
   useEffect(() => {
     signInAnonymously(auth).catch(() => setUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) }));
     onAuthStateChanged(auth, (u) => { if(u) setUser(u); });
 
+    // 1. MESSAGES LISTENER
     const q = query(collection(db, "messages"), orderBy("createdAt"));
-    
-    const unsub = onSnapshot(q, (snapshot) => {
+    const unsubMsg = onSnapshot(q, (snapshot) => {
       const loadedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMessages(loadedMsgs);
       setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
-      // --- AUTO-READ LOGIC ---
-      // If we are logged in, mark messages from OTHERS as "Read" by US
+      // Auto-read logic
       if (username) {
         snapshot.docs.forEach((docSnapshot) => {
             const msgData = docSnapshot.data();
-            // 1. It's not my message
             if (msgData.deviceId !== deviceId) {
-                // 2. I haven't read it yet
                 const alreadyRead = msgData.readBy?.some(reader => reader.deviceId === deviceId);
                 if (!alreadyRead) {
-                    // 3. Mark it as read
                     updateDoc(docSnapshot.ref, {
-                        readBy: arrayUnion({ 
-                            deviceId: deviceId, 
-                            name: username,
-                            readAt: Date.now() 
-                        })
-                    }).catch(err => console.log("Read receipt error (ignore):", err));
+                        readBy: arrayUnion({ deviceId: deviceId, name: username, readAt: Date.now() })
+                    }).catch(err => console.log("Read receipt error:", err));
                 }
             }
         });
       }
     });
 
-    const timer = setInterval(() => setTick(t => t + 1), 1000);
-    return () => { unsub(); clearInterval(timer); };
-  }, [username, deviceId]); // Re-run listener if username changes so we mark with correct name
+    // 2. TYPING STATUS LISTENER
+    // We listen to the "typing" collection to see who is active
+    const unsubTyping = onSnapshot(collection(db, "typing"), (snapshot) => {
+      const now = Date.now();
+      const activeTypers = [];
+      
+      snapshot.forEach(doc => {
+        // Don't show myself typing
+        if (doc.id !== deviceId) {
+          const data = doc.data();
+          // Only show if the typing signal is fresh (less than 5 seconds old)
+          if (now - data.timestamp < 5000) {
+            activeTypers.push(data.displayName || "Someone");
+          }
+        }
+      });
+      setTypingUsers(activeTypers);
+      if(activeTypers.length > 0) {
+         setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      }
+    });
 
-  // Helper: Format nice timestamp
+    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    return () => { unsubMsg(); unsubTyping(); clearInterval(timer); };
+  }, [username, deviceId]);
+
+  // --- HANDLERS ---
+
   const getMessageTime = (createdAt) => {
     if (!createdAt) return "Sending...";
     const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getRelativeTime = (createdAt) => {
-    if (!createdAt) return "";
-    const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
-    const diffInSeconds = Math.floor((new Date() - date) / 1000);
-    if (diffInSeconds < 60) return "Just now";
-    return `${Math.floor(diffInSeconds / 60)}m ago`;
+  const handleTyping = (e) => {
+    setNewMessage(e.target.value);
+    
+    if (!user || !username) return;
+
+    // 1. Update Firestore to say "I am typing"
+    setDoc(doc(db, "typing", deviceId), {
+      displayName: username,
+      timestamp: Date.now()
+    });
+
+    // 2. Clear previous timeout to prevent premature deletion
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // 3. Set a timeout to remove "typing" status after 2 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      deleteDoc(doc(db, "typing", deviceId));
+    }, 2000);
   };
 
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
+    
+    // Clear typing status immediately upon sending
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    deleteDoc(doc(db, "typing", deviceId));
+
     try {
       await addDoc(collection(db, "messages"), {
         text: newMessage,
@@ -134,7 +169,7 @@ export default function App() {
         deviceId: deviceId,
         displayName: username || "Anonymous",
         photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${deviceId}`,
-        readBy: [] // Initialize empty read list
+        readBy: []
       });
       setNewMessage("");
     } catch (e) { console.error(e); }
@@ -238,13 +273,9 @@ export default function App() {
                       {msg.text}
                     </div>
                     
-                    {/* INFO ROW: Time + Read Receipts */}
+                    {/* INFO ROW */}
                     <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
-                        
-                        {/* 1. Time */}
                         <span>{getMessageTime(msg.createdAt)}</span>
-                        
-                        {/* 2. Read Receipt (Only for ME) */}
                         {isMe && (
                             <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
                                 {readCount > 0 ? (
@@ -259,7 +290,6 @@ export default function App() {
                         )}
                     </div>
 
-                    {/* Admin Delete */}
                     {isAdmin && (
                       <button 
                         onClick={() => handleDelete(msg.id)}
@@ -274,6 +304,30 @@ export default function App() {
             </div>
           );
         })}
+        
+        {/* --- TYPING INDICATOR --- */}
+        {typingUsers.length > 0 && (
+          <div className="flex w-full justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+             <div className="flex items-end gap-2 max-w-[85%]">
+                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                   <span className="animate-pulse text-gray-400">...</span>
+                </div>
+                <div className="bg-gray-100 border border-gray-200 px-4 py-3 rounded-2xl rounded-bl-none">
+                  <div className="flex items-center gap-2">
+                     <div className="flex space-x-1">
+                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
+                     </div>
+                     <span className="text-xs text-gray-500 font-medium">
+                        {typingUsers.join(", ")} is typing...
+                     </span>
+                  </div>
+                </div>
+             </div>
+          </div>
+        )}
+
         <div ref={dummy}></div>
       </main>
 
@@ -282,7 +336,7 @@ export default function App() {
         <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
           <input
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleTyping} // Changed from setNewMessage to handleTyping
             placeholder={`Message as ${username}...`}
             className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
           />
