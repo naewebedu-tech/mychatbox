@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Send, MessageCircle, Trash2, Lock, Unlock, User, Users, 
-  XCircle, Clock, Fingerprint, Check, Eye, Reply, X, LogOut, Key, Hash
+  Send, Users, Lock, Unlock, User, 
+  XCircle, Eye, Reply, X, LogOut, Key, Hash, ArrowRight, ShieldCheck, Globe
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
@@ -63,7 +63,8 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   // Chat Room State
-  const [roomCode, setRoomCode] = useState('general'); // Default room
+  const [roomCode, setRoomCode] = useState(null); // Null means "Not in a room yet"
+  const [roomInput, setRoomInput] = useState("");
   
   // Data State
   const [messages, setMessages] = useState([]);
@@ -83,18 +84,20 @@ export default function App() {
   const typingTimeoutRef = useRef(null);
 
   // --- HELPER: GET COLLECTION REF ---
-  // If room is 'general', use root collections (preserves old chats).
-  // If room is custom, use subcollections to isolate data.
+  // LOGIC UPDATE: 
+  // 1. 'brosis123' -> maps to root 'messages' (The OLD chat history)
+  // 2. 'public' -> maps to rooms/public/messages (The NEW open chat)
+  // 3. Any other code -> maps to rooms/{code}/messages
   const getMessagesRef = () => {
-    return roomCode === 'general' 
-      ? collection(db, "messages") 
-      : collection(db, "rooms", roomCode, "messages");
+    if (roomCode === 'brosis123') return collection(db, "messages");
+    if (roomCode === 'public') return collection(db, "rooms", "public", "messages");
+    return collection(db, "rooms", roomCode, "messages");
   };
 
   const getTypingRef = () => {
-    return roomCode === 'general'
-      ? collection(db, "typing")
-      : collection(db, "rooms", roomCode, "typing");
+    if (roomCode === 'brosis123') return collection(db, "typing");
+    if (roomCode === 'public') return collection(db, "rooms", "public", "typing");
+    return collection(db, "rooms", roomCode, "typing");
   };
 
   // 1. INITIALIZATION
@@ -117,19 +120,20 @@ export default function App() {
     }
   }, []);
 
-  // 2. DATA LISTENERS (Re-run when roomCode changes)
+  // 2. DATA LISTENERS
   useEffect(() => {
-    setMessages([]); // Clear previous room messages while loading
+    // Only listen if we are logged in AND have entered a room
+    if (!isLoggedIn || !roomCode) return;
+
+    setMessages([]); 
     setTypingUsers([]);
 
-    // Listen for Messages
     const q = query(getMessagesRef(), orderBy("createdAt"));
     const unsubMsg = onSnapshot(q, (snapshot) => {
       const loadedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMessages(loadedMsgs);
       setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
-      // Auto-read logic
       if (isLoggedIn && username) {
         snapshot.docs.forEach((docSnapshot) => {
             const msgData = docSnapshot.data();
@@ -145,7 +149,6 @@ export default function App() {
       }
     });
 
-    // Listen for Typing
     const unsubTyping = onSnapshot(getTypingRef(), (snapshot) => {
       const now = Date.now();
       const activeTypers = [];
@@ -159,7 +162,7 @@ export default function App() {
     });
 
     return () => { unsubMsg(); unsubTyping(); };
-  }, [username, isLoggedIn, roomCode]); // Added roomCode dependency
+  }, [username, isLoggedIn, roomCode]);
 
   // --- LOGIN LOGIC ---
   const handleLogin = async (e) => {
@@ -211,6 +214,26 @@ export default function App() {
     localStorage.removeItem('chat_app_user');
     setIsLoggedIn(false);
     setUsername("");
+    setRoomCode(null); // Reset room on logout
+  };
+
+  // --- ROOM LOGIC ---
+  const handleJoinRoom = (e) => {
+    e.preventDefault();
+    if(roomInput.trim()) {
+      setRoomCode(roomInput.trim().toLowerCase());
+    }
+  };
+
+  // Maps to the NEW open public room
+  const joinPublicRoom = () => {
+    setRoomCode('public');
+  };
+
+  const exitRoom = () => {
+    setRoomCode(null);
+    setMessages([]);
+    setRoomInput(""); // Clear the input so it doesn't remember the code
   };
 
   // --- MESSAGING LOGIC ---
@@ -222,9 +245,8 @@ export default function App() {
 
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
-    if (!isLoggedIn || !username) return;
+    if (!isLoggedIn || !username || !roomCode) return;
 
-    // Use a unique ID for the typing document based on username
     const typingDocRef = doc(getTypingRef(), username);
     setDoc(typingDocRef, { displayName: username, timestamp: Date.now() });
     
@@ -234,7 +256,7 @@ export default function App() {
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !firebaseUser || !isLoggedIn) return;
+    if (!newMessage.trim() || !firebaseUser || !isLoggedIn || !roomCode) return;
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     deleteDoc(doc(getTypingRef(), username));
@@ -279,14 +301,89 @@ export default function App() {
     else alert("Wrong password");
   };
 
-  // Change Room Handler
-  const handleChangeRoom = () => {
-    const code = prompt("Enter Chat Code (Room Name):", roomCode);
-    if (code && code.trim() !== "") {
-      setRoomCode(code.trim().toLowerCase());
-    }
-  };
+  // --- RENDER CONDITION: LOGIN SCREEN ---
+  if (!isLoggedIn) {
+    return (
+      <div className="flex flex-col h-screen bg-gray-50 items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Key size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Secure Login</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Enter a name and password to start.
+          </p>
+          <form onSubmit={handleLogin} className="space-y-3">
+            <input 
+              autoFocus
+              value={loginName}
+              onChange={(e) => setLoginName(e.target.value)}
+              placeholder="Username"
+              className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none font-bold text-center text-lg text-gray-800"
+            />
+            <input 
+              type="password"
+              value={loginPass}
+              onChange={(e) => setLoginPass(e.target.value)}
+              placeholder="Password"
+              className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none text-center text-lg text-gray-800"
+            />
+            {loginError && <p className="text-red-500 text-xs font-bold">{loginError}</p>}
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95">
+              Login / Register
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
+  // --- RENDER CONDITION: ROOM ENTRY SCREEN ---
+  if (!roomCode) {
+    return (
+      <div className="flex flex-col h-screen bg-gray-50 items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <ShieldCheck size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Secret Code Entry</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Welcome, <span className="font-bold text-gray-800">{username}</span>.<br/>
+            Enter a room code to access messages.
+          </p>
+          
+          <form onSubmit={handleJoinRoom} className="space-y-4">
+            <div className="relative">
+              <Hash className="absolute left-4 top-3.5 text-gray-400" size={20} />
+              <input 
+                autoFocus
+                value={roomInput}
+                onChange={(e) => setRoomInput(e.target.value)}
+                placeholder="Enter Chat Code..."
+                className="w-full bg-gray-50 border border-gray-200 focus:border-purple-500 rounded-xl pl-12 pr-4 py-3 outline-none font-bold text-lg text-gray-800"
+              />
+            </div>
+            <button type="submit" disabled={!roomInput.trim()} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
+              Enter Secret Room <ArrowRight size={18} />
+            </button>
+            <p className="text-[10px] text-gray-400">Use <span className="font-mono bg-gray-100 px-1 rounded">brosis123</span> for old history</p>
+          </form>
+
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <p className="text-xs text-gray-400 mb-3">OR</p>
+            <button onClick={joinPublicRoom} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+              <Globe size={18} /> Join Open Public Chat
+            </button>
+            <button onClick={handleLogout} className="mt-4 text-xs text-red-400 hover:text-red-600 underline">
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- MAIN CHAT RENDER ---
   return (
     <div className="flex flex-col h-screen bg-gray-50 font-sans">
       
@@ -299,29 +396,31 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold text-gray-800 leading-none">Global Chat</h1>
             <div className="flex items-center gap-2 mt-1">
-               {/* Room Code Button */}
-               <button 
-                onClick={handleChangeRoom}
-                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md font-medium flex items-center gap-1 transition-colors"
-                title="Click to switch rooms"
-               >
+               <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 border border-purple-200">
                  <Hash size={10} />
-                 {roomCode}
-               </button>
+                 {roomCode === 'brosis123' ? 'Private History' : roomCode}
+               </span>
                <span className="text-xs text-green-500 font-medium flex items-center gap-1">
                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                 {isLoggedIn ? username : 'Waiting...'}
+                 {username}
                </span>
             </div>
           </div>
         </div>
 
         <div className="flex gap-2 items-center">
-          {isLoggedIn && (
-            <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-600 rounded-full hover:bg-red-50" title="Logout">
-              <LogOut size={20}/>
-            </button>
-          )}
+          {/* GET OUT BUTTON */}
+          <button 
+            onClick={exitRoom} 
+            className="text-xs bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors border border-gray-200" 
+            title="Leave Room"
+          >
+            Get Out
+          </button>
+          
+          <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-600 rounded-full hover:bg-red-50" title="Logout">
+            <LogOut size={20}/>
+          </button>
           {isAdmin && (
             <button onClick={clearChat} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1" title="Clear All Messages">
                 <Trash2 size={20} />
@@ -361,19 +460,17 @@ export default function App() {
                   
                   <div className="relative">
                     {/* REPLY BUTTON */}
-                    {isLoggedIn && (
-                      <button 
-                        onClick={() => setReplyingTo(msg)}
-                        className={`
-                          absolute top-1/2 -translate-y-1/2 
-                          ${isMe ? '-left-10' : '-right-10'}
-                          p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
-                        `}
-                        title="Reply"
-                      >
-                        <Reply size={16} />
-                      </button>
-                    )}
+                    <button 
+                      onClick={() => setReplyingTo(msg)}
+                      className={`
+                        absolute top-1/2 -translate-y-1/2 
+                        ${isMe ? '-left-10' : '-right-10'}
+                        p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
+                      `}
+                      title="Reply"
+                    >
+                      <Reply size={16} />
+                    </button>
 
                     {/* Admin Delete */}
                     {isAdmin && (
@@ -393,7 +490,6 @@ export default function App() {
                         : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
                       }
                     `}>
-                      {/* QUOTED MESSAGE */}
                       {msg.replyTo && (
                         <div className={`
                           mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
@@ -403,7 +499,6 @@ export default function App() {
                           <p className="truncate opacity-80">{msg.replyTo.text}</p>
                         </div>
                       )}
-
                       {msg.text}
                     </div>
                     
@@ -447,84 +542,37 @@ export default function App() {
         <div ref={dummy}></div>
       </main>
 
-      {/* INPUT AREA (Only if logged in) */}
-      {isLoggedIn ? (
-        <div className="bg-white border-t border-gray-200">
-          
-          {/* REPLY PREVIEW BAR */}
-          {replyingTo && (
-            <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
-              <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
-                <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
-                <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
-              </div>
-              <button 
-                onClick={() => setReplyingTo(null)}
-                className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
-              >
-                <X size={18} />
-              </button>
+      {/* INPUT AREA */}
+      <div className="bg-white border-t border-gray-200">
+        {replyingTo && (
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
+            <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
+              <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
+              <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
             </div>
-          )}
-
-          <div className="p-4">
-            <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
-              <input
-                value={newMessage}
-                onChange={handleTyping}
-                placeholder={replyingTo ? "Type your reply..." : `Message as ${username}...`}
-                className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
-              />
-              <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
-                <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
-              </button>
-            </form>
+            <button 
+              onClick={() => setReplyingTo(null)}
+              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+            >
+              <X size={18} />
+            </button>
           </div>
-        </div>
-      ) : (
-        <div className="p-4 bg-gray-50 border-t border-gray-200 text-center text-gray-500 text-sm">
-          Please login to send messages.
-        </div>
-      )}
+        )}
 
-      {/* LOGIN/REGISTER MODAL */}
-      {!isLoggedIn && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Key size={32} />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Secure Login</h2>
-            <p className="text-gray-500 text-sm mb-6">
-              Enter a name and password. <br/>
-              <span className="text-xs opacity-80">(New names are automatically registered)</span>
-            </p>
-            
-            <form onSubmit={handleLogin} className="space-y-3">
-              <input 
-                autoFocus
-                value={loginName}
-                onChange={(e) => setLoginName(e.target.value)}
-                placeholder="Username"
-                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none font-bold text-center text-lg text-gray-800"
-              />
-              <input 
-                type="password"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                placeholder="Password"
-                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none text-center text-lg text-gray-800"
-              />
-              
-              {loginError && <p className="text-red-500 text-xs font-bold">{loginError}</p>}
-
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95">
-                Login / Register
-              </button>
-            </form>
-          </div>
+        <div className="p-4">
+          <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
+            <input
+              value={newMessage}
+              onChange={handleTyping}
+              placeholder={replyingTo ? "Type your reply..." : `Message #${roomCode} as ${username}...`}
+              className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
+            />
+            <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
+              <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
+            </button>
+          </form>
         </div>
-      )}
+      </div>
     </div>
   );
 }
