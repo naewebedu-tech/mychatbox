@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageCircle, Trash2, Lock, Unlock, User, Users, XCircle, Clock, Fingerprint, Check, CheckCheck, Eye } from 'lucide-react';
+import { 
+  Send, MessageCircle, Trash2, Lock, Unlock, User, Users, 
+  XCircle, Clock, Fingerprint, Check, Eye, Reply, X 
+} from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
@@ -10,7 +13,7 @@ import {
   getFirestore, 
   collection, 
   addDoc, 
-  setDoc, // Added setDoc
+  setDoc,
   updateDoc,
   arrayUnion,
   deleteDoc,
@@ -64,13 +67,13 @@ export default function App() {
   const [username, setUsername] = useState(() => localStorage.getItem('chat_username') || '');
   const [deviceId] = useState(getDeviceId());
   const [messages, setMessages] = useState([]);
-  const [typingUsers, setTypingUsers] = useState([]); // List of people typing
+  const [typingUsers, setTypingUsers] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null); // State for the message being replied to
   const [isAdmin, setIsAdmin] = useState(false);
   const [showNameModal, setShowNameModal] = useState(!localStorage.getItem('chat_username'));
-  const [, setTick] = useState(0); 
   const dummy = useRef();
-  const typingTimeoutRef = useRef(null); // Ref to manage typing debounce
+  const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
     signInAnonymously(auth).catch(() => setUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) }));
@@ -100,32 +103,20 @@ export default function App() {
     });
 
     // 2. TYPING STATUS LISTENER
-    // We listen to the "typing" collection to see who is active
     const unsubTyping = onSnapshot(collection(db, "typing"), (snapshot) => {
       const now = Date.now();
       const activeTypers = [];
-      
       snapshot.forEach(doc => {
-        // Don't show myself typing
         if (doc.id !== deviceId) {
           const data = doc.data();
-          // Only show if the typing signal is fresh (less than 5 seconds old)
-          if (now - data.timestamp < 5000) {
-            activeTypers.push(data.displayName || "Someone");
-          }
+          if (now - data.timestamp < 5000) activeTypers.push(data.displayName || "Someone");
         }
       });
       setTypingUsers(activeTypers);
-      if(activeTypers.length > 0) {
-         setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      }
     });
 
-    const timer = setInterval(() => setTick(t => t + 1), 1000);
-    return () => { unsubMsg(); unsubTyping(); clearInterval(timer); };
+    return () => { unsubMsg(); unsubTyping(); };
   }, [username, deviceId]);
-
-  // --- HANDLERS ---
 
   const getMessageTime = (createdAt) => {
     if (!createdAt) return "Sending...";
@@ -135,29 +126,17 @@ export default function App() {
 
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
-    
     if (!user || !username) return;
 
-    // 1. Update Firestore to say "I am typing"
-    setDoc(doc(db, "typing", deviceId), {
-      displayName: username,
-      timestamp: Date.now()
-    });
-
-    // 2. Clear previous timeout to prevent premature deletion
+    setDoc(doc(db, "typing", deviceId), { displayName: username, timestamp: Date.now() });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-    // 3. Set a timeout to remove "typing" status after 2 seconds of inactivity
-    typingTimeoutRef.current = setTimeout(() => {
-      deleteDoc(doc(db, "typing", deviceId));
-    }, 2000);
+    typingTimeoutRef.current = setTimeout(() => { deleteDoc(doc(db, "typing", deviceId)); }, 2000);
   };
 
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
     
-    // Clear typing status immediately upon sending
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     deleteDoc(doc(db, "typing", deviceId));
 
@@ -169,9 +148,16 @@ export default function App() {
         deviceId: deviceId,
         displayName: username || "Anonymous",
         photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${deviceId}`,
-        readBy: []
+        readBy: [],
+        // Attach reply data if exists
+        replyTo: replyingTo ? {
+          id: replyingTo.id,
+          text: replyingTo.text,
+          displayName: replyingTo.displayName
+        } : null
       });
       setNewMessage("");
+      setReplyingTo(null); // Clear reply after sending
     } catch (e) { console.error(e); }
   };
 
@@ -248,6 +234,7 @@ export default function App() {
             <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message`}>
               <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[60%]`}>
                 
+                {/* Name Label */}
                 {!isMe && (
                   <span className={`text-[11px] font-bold ml-12 mb-1 ${getNameColor(msg.displayName || 'Anonymous')}`}>
                     {msg.displayName || "Anonymous"}
@@ -255,6 +242,7 @@ export default function App() {
                 )}
 
                 <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* Avatar */}
                   <img 
                     src={msg.photoURL} 
                     alt="avatar" 
@@ -262,14 +250,48 @@ export default function App() {
                   />
                   
                   <div className="relative">
+                    {/* REPLY BUTTON (Visible on Hover) */}
+                    <button 
+                      onClick={() => setReplyingTo(msg)}
+                      className={`
+                        absolute top-1/2 -translate-y-1/2 
+                        ${isMe ? '-left-10' : '-right-10'}
+                        p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
+                      `}
+                      title="Reply"
+                    >
+                      <Reply size={16} />
+                    </button>
+
+                    {/* Admin Delete */}
+                    {isAdmin && (
+                      <button 
+                        onClick={() => handleDelete(msg.id)}
+                        className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-20' : '-right-20'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity`}
+                      >
+                        <XCircle size={16} />
+                      </button>
+                    )}
+
                     {/* Message Bubble */}
                     <div className={`
-                      px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words
+                      px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words relative
                       ${isMe 
                         ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' 
                         : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
                       }
                     `}>
+                      {/* QUOTED MESSAGE DISPLAY */}
+                      {msg.replyTo && (
+                        <div className={`
+                          mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
+                          ${isMe ? 'border-blue-300 bg-blue-700/50 text-blue-100' : 'border-blue-500 bg-gray-100 text-gray-500'}
+                        `}>
+                          <p className="font-bold opacity-100 mb-0.5">{msg.replyTo.displayName}</p>
+                          <p className="truncate opacity-80">{msg.replyTo.text}</p>
+                        </div>
+                      )}
+
                       {msg.text}
                     </div>
                     
@@ -289,15 +311,6 @@ export default function App() {
                             </div>
                         )}
                     </div>
-
-                    {isAdmin && (
-                      <button 
-                        onClick={() => handleDelete(msg.id)}
-                        className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-10' : '-right-10'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity`}
-                      >
-                        <XCircle size={16} />
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -305,7 +318,7 @@ export default function App() {
           );
         })}
         
-        {/* --- TYPING INDICATOR --- */}
+        {/* TYPING INDICATOR */}
         {typingUsers.length > 0 && (
           <div className="flex w-full justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
              <div className="flex items-end gap-2 max-w-[85%]">
@@ -313,16 +326,7 @@ export default function App() {
                    <span className="animate-pulse text-gray-400">...</span>
                 </div>
                 <div className="bg-gray-100 border border-gray-200 px-4 py-3 rounded-2xl rounded-bl-none">
-                  <div className="flex items-center gap-2">
-                     <div className="flex space-x-1">
-                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
-                     </div>
-                     <span className="text-xs text-gray-500 font-medium">
-                        {typingUsers.join(", ")} is typing...
-                     </span>
-                  </div>
+                  <span className="text-xs text-gray-500 font-medium">{typingUsers.join(", ")} is typing...</span>
                 </div>
              </div>
           </div>
@@ -332,18 +336,37 @@ export default function App() {
       </main>
 
       {/* INPUT AREA */}
-      <div className="p-4 bg-white border-t border-gray-200">
-        <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
-          <input
-            value={newMessage}
-            onChange={handleTyping} // Changed from setNewMessage to handleTyping
-            placeholder={`Message as ${username}...`}
-            className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
-          />
-          <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
-            <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
-          </button>
-        </form>
+      <div className="bg-white border-t border-gray-200">
+        
+        {/* REPLY PREVIEW BAR */}
+        {replyingTo && (
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
+            <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
+              <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
+              <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
+            </div>
+            <button 
+              onClick={() => setReplyingTo(null)}
+              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        )}
+
+        <div className="p-4">
+          <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
+            <input
+              value={newMessage}
+              onChange={handleTyping}
+              placeholder={replyingTo ? "Type your reply..." : `Message as ${username}...`}
+              className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
+            />
+            <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
+              <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* NAME MODAL */}
