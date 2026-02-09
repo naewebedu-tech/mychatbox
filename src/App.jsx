@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, MessageCircle, Trash2, Lock, Unlock, User, Users, 
-  XCircle, Clock, Fingerprint, Check, Eye, Reply, X, LogOut, Key
+  XCircle, Clock, Fingerprint, Check, Eye, Reply, X, LogOut, Key, Hash
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
@@ -58,9 +58,12 @@ export default function App() {
   // Auth State
   const [firebaseUser, setFirebaseUser] = useState(null);
   
-  // App User State (The Chat Identity)
+  // App User State
   const [username, setUsername] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  
+  // Chat Room State
+  const [roomCode, setRoomCode] = useState('general'); // Default room
   
   // Data State
   const [messages, setMessages] = useState([]);
@@ -79,10 +82,23 @@ export default function App() {
   const dummy = useRef();
   const typingTimeoutRef = useRef(null);
 
+  // --- HELPER: GET COLLECTION REF ---
+  // If room is 'general', use root collections (preserves old chats).
+  // If room is custom, use subcollections to isolate data.
+  const getMessagesRef = () => {
+    return roomCode === 'general' 
+      ? collection(db, "messages") 
+      : collection(db, "rooms", roomCode, "messages");
+  };
+
+  const getTypingRef = () => {
+    return roomCode === 'general'
+      ? collection(db, "typing")
+      : collection(db, "rooms", roomCode, "typing");
+  };
+
   // 1. INITIALIZATION
   useEffect(() => {
-    // Authenticate with Firebase for database access
-    // Added Fallback: If auth fails (e.g. config error), create a local fallback user so app still works
     signInAnonymously(auth)
       .catch((err) => {
         console.warn("Auth failed, falling back to guest mode:", err);
@@ -93,16 +109,21 @@ export default function App() {
       if(u) setFirebaseUser(u); 
     });
 
-    // Check Local Storage for persistent login
     const savedUser = localStorage.getItem('chat_app_user');
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
       setUsername(parsed.username);
       setIsLoggedIn(true);
     }
+  }, []);
 
-    // 2. MESSAGES LISTENER
-    const q = query(collection(db, "messages"), orderBy("createdAt"));
+  // 2. DATA LISTENERS (Re-run when roomCode changes)
+  useEffect(() => {
+    setMessages([]); // Clear previous room messages while loading
+    setTypingUsers([]);
+
+    // Listen for Messages
+    const q = query(getMessagesRef(), orderBy("createdAt"));
     const unsubMsg = onSnapshot(q, (snapshot) => {
       const loadedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMessages(loadedMsgs);
@@ -112,7 +133,6 @@ export default function App() {
       if (isLoggedIn && username) {
         snapshot.docs.forEach((docSnapshot) => {
             const msgData = docSnapshot.data();
-            // If message is not from me
             if (msgData.senderName !== username) {
                 const alreadyRead = msgData.readBy?.some(reader => reader.name === username);
                 if (!alreadyRead) {
@@ -125,12 +145,12 @@ export default function App() {
       }
     });
 
-    // 3. TYPING STATUS LISTENER
-    const unsubTyping = onSnapshot(collection(db, "typing"), (snapshot) => {
+    // Listen for Typing
+    const unsubTyping = onSnapshot(getTypingRef(), (snapshot) => {
       const now = Date.now();
       const activeTypers = [];
       snapshot.forEach(doc => {
-        if (doc.id !== username) { // Don't show myself
+        if (doc.id !== username) { 
           const data = doc.data();
           if (now - data.timestamp < 3000) activeTypers.push(data.displayName);
         }
@@ -139,7 +159,7 @@ export default function App() {
     });
 
     return () => { unsubMsg(); unsubTyping(); };
-  }, [username, isLoggedIn]);
+  }, [username, isLoggedIn, roomCode]); // Added roomCode dependency
 
   // --- LOGIN LOGIC ---
   const handleLogin = async (e) => {
@@ -155,24 +175,20 @@ export default function App() {
     }
 
     try {
-      // Check if user exists in our custom 'users' collection
       const userDocRef = doc(db, "chat_users", cleanName.toLowerCase());
       const userDoc = await getDoc(userDocRef);
 
       if (userDoc.exists()) {
-        // User exists, check password
         const userData = userDoc.data();
         if (userData.password === cleanPass) {
-          // Success: Login
           completeLogin(cleanName);
         } else {
           setLoginError("Incorrect password for this user.");
         }
       } else {
-        // User doesn't exist, Create new account
         await setDoc(userDocRef, {
           username: cleanName,
-          password: cleanPass, // In a real app, hash this!
+          password: cleanPass,
           createdAt: serverTimestamp()
         });
         completeLogin(cleanName);
@@ -208,9 +224,12 @@ export default function App() {
     setNewMessage(e.target.value);
     if (!isLoggedIn || !username) return;
 
-    setDoc(doc(db, "typing", username), { displayName: username, timestamp: Date.now() });
+    // Use a unique ID for the typing document based on username
+    const typingDocRef = doc(getTypingRef(), username);
+    setDoc(typingDocRef, { displayName: username, timestamp: Date.now() });
+    
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => { deleteDoc(doc(db, "typing", username)); }, 2000);
+    typingTimeoutRef.current = setTimeout(() => { deleteDoc(typingDocRef); }, 2000);
   };
 
   const sendMessage = async (e) => {
@@ -218,15 +237,14 @@ export default function App() {
     if (!newMessage.trim() || !firebaseUser || !isLoggedIn) return;
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    deleteDoc(doc(db, "typing", username));
+    deleteDoc(doc(getTypingRef(), username));
 
     try {
-      await addDoc(collection(db, "messages"), {
+      await addDoc(getMessagesRef(), {
         text: newMessage,
         createdAt: serverTimestamp(),
-        senderName: username, // The unique ID for this message
+        senderName: username,
         displayName: username,
-        // Unique Avatar based on username
         photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${username}`,
         readBy: [],
         replyTo: replyingTo ? {
@@ -242,14 +260,14 @@ export default function App() {
 
   const handleDelete = async (id) => {
     if (isAdmin && confirm("Delete message?")) {
-      try { await deleteDoc(doc(db, "messages", id)); } catch (e) {}
+      try { await deleteDoc(doc(getMessagesRef(), id)); } catch (e) {}
     }
   };
 
   const clearChat = async () => {
     if (!isAdmin) return;
-    if (confirm("⚠️ Clear ALL messages?")) {
-      const q = query(collection(db, "messages"));
+    if (confirm("⚠️ Clear ALL messages in this room?")) {
+      const q = query(getMessagesRef());
       const snapshot = await getDocs(q);
       snapshot.forEach((doc) => deleteDoc(doc.ref));
     }
@@ -259,6 +277,14 @@ export default function App() {
     if (isAdmin) setIsAdmin(false);
     else if (prompt("Admin Password:") === "admin123") setIsAdmin(true);
     else alert("Wrong password");
+  };
+
+  // Change Room Handler
+  const handleChangeRoom = () => {
+    const code = prompt("Enter Chat Code (Room Name):", roomCode);
+    if (code && code.trim() !== "") {
+      setRoomCode(code.trim().toLowerCase());
+    }
   };
 
   return (
@@ -272,10 +298,21 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-800 leading-none">Global Chat</h1>
-            <span className="text-xs text-green-500 font-medium flex items-center gap-1 mt-1">
-              <Key size={12} className="inline mr-1" />
-              {isLoggedIn ? `Logged in as ${username}` : 'Waiting for login...'}
-            </span>
+            <div className="flex items-center gap-2 mt-1">
+               {/* Room Code Button */}
+               <button 
+                onClick={handleChangeRoom}
+                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md font-medium flex items-center gap-1 transition-colors"
+                title="Click to switch rooms"
+               >
+                 <Hash size={10} />
+                 {roomCode}
+               </button>
+               <span className="text-xs text-green-500 font-medium flex items-center gap-1">
+                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                 {isLoggedIn ? username : 'Waiting...'}
+               </span>
+            </div>
           </div>
         </div>
 
