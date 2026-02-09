@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageCircle, Trash2, Lock, Unlock, User, Users, XCircle } from 'lucide-react'; // Added XCircle
+import { Send, MessageCircle, Trash2, Lock, Unlock, User, Users, XCircle, Clock, Fingerprint, Check, CheckCheck, Eye } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
@@ -10,8 +10,10 @@ import {
   getFirestore, 
   collection, 
   addDoc, 
+  updateDoc,
+  arrayUnion,
   deleteDoc,
-  getDocs, // Added for clearing chat
+  getDocs,
   doc,
   query, 
   orderBy, 
@@ -34,6 +36,16 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// --- HELPER: DEVICE FINGERPRINT ---
+const getDeviceId = () => {
+  let id = localStorage.getItem('chat_device_id');
+  if (!id) {
+    id = "dev_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+    localStorage.setItem('chat_device_id', id);
+  }
+  return id;
+};
+
 const getNameColor = (name) => {
   const colors = [
     'text-red-600', 'text-orange-600', 'text-amber-600', 
@@ -49,26 +61,68 @@ const getNameColor = (name) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [username, setUsername] = useState(() => localStorage.getItem('chat_username') || '');
+  const [deviceId] = useState(getDeviceId());
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [showNameModal, setShowNameModal] = useState(!localStorage.getItem('chat_username'));
+  const [, setTick] = useState(0); 
   const dummy = useRef();
 
-  // 1. Connect
   useEffect(() => {
     signInAnonymously(auth).catch(() => setUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) }));
     onAuthStateChanged(auth, (u) => { if(u) setUser(u); });
 
     const q = query(collection(db, "messages"), orderBy("createdAt"));
+    
     const unsub = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const loadedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMessages(loadedMsgs);
       setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    });
-    return () => unsub();
-  }, []);
 
-  // 2. Send
+      // --- AUTO-READ LOGIC ---
+      // If we are logged in, mark messages from OTHERS as "Read" by US
+      if (username) {
+        snapshot.docs.forEach((docSnapshot) => {
+            const msgData = docSnapshot.data();
+            // 1. It's not my message
+            if (msgData.deviceId !== deviceId) {
+                // 2. I haven't read it yet
+                const alreadyRead = msgData.readBy?.some(reader => reader.deviceId === deviceId);
+                if (!alreadyRead) {
+                    // 3. Mark it as read
+                    updateDoc(docSnapshot.ref, {
+                        readBy: arrayUnion({ 
+                            deviceId: deviceId, 
+                            name: username,
+                            readAt: Date.now() 
+                        })
+                    }).catch(err => console.log("Read receipt error (ignore):", err));
+                }
+            }
+        });
+      }
+    });
+
+    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    return () => { unsub(); clearInterval(timer); };
+  }, [username, deviceId]); // Re-run listener if username changes so we mark with correct name
+
+  // Helper: Format nice timestamp
+  const getMessageTime = (createdAt) => {
+    if (!createdAt) return "Sending...";
+    const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getRelativeTime = (createdAt) => {
+    if (!createdAt) return "";
+    const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+    const diffInSeconds = Math.floor((new Date() - date) / 1000);
+    if (diffInSeconds < 60) return "Just now";
+    return `${Math.floor(diffInSeconds / 60)}m ago`;
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
@@ -77,33 +131,30 @@ export default function App() {
         text: newMessage,
         createdAt: serverTimestamp(),
         uid: user.uid,
+        deviceId: deviceId,
         displayName: username || "Anonymous",
-        photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${user.uid}`
+        photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${deviceId}`,
+        readBy: [] // Initialize empty read list
       });
       setNewMessage("");
     } catch (e) { console.error(e); }
   };
 
-  // 3. Delete Single Message
   const handleDelete = async (id) => {
     if (isAdmin && confirm("Delete message?")) {
       try { await deleteDoc(doc(db, "messages", id)); } catch (e) {}
     }
   };
 
-  // 4. NEW: Clear Entire Chat
   const clearChat = async () => {
     if (!isAdmin) return;
-    if (confirm("⚠️ DANGER: This will delete ALL messages for EVERYONE forever.\n\nAre you sure?")) {
+    if (confirm("⚠️ Clear ALL messages?")) {
       const q = query(collection(db, "messages"));
       const snapshot = await getDocs(q);
-      snapshot.forEach((doc) => {
-        deleteDoc(doc.ref);
-      });
+      snapshot.forEach((doc) => deleteDoc(doc.ref));
     }
   };
 
-  // 5. Name Setup & Admin
   const handleSaveName = (e) => {
     e.preventDefault();
     if (username.trim()) {
@@ -130,30 +181,21 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold text-gray-800 leading-none">Group Chat</h1>
             <span className="text-xs text-green-500 font-medium flex items-center gap-1 mt-1">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> 
-              {username ? ` You are: ${username}` : ' Online'}
+              <Fingerprint size={12} className="inline mr-1" />
+              {username ? `Logged in as ${username}` : 'Guest Mode'}
             </span>
           </div>
         </div>
 
         <div className="flex gap-2 items-center">
-          {/* Change Name */}
           <button onClick={() => setShowNameModal(true)} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100" title="Change Name">
             <User size={20}/>
           </button>
-          
-          {/* NEW: Clear Chat Button (Admin Only) */}
           {isAdmin && (
-            <button 
-                onClick={clearChat}
-                className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1"
-                title="Clear All Messages"
-            >
+            <button onClick={clearChat} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1" title="Clear All Messages">
                 <Trash2 size={20} />
             </button>
           )}
-
-          {/* Admin Lock */}
           <button onClick={toggleAdmin} className={`p-2 rounded-full ${isAdmin ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>
             {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
           </button>
@@ -163,7 +205,9 @@ export default function App() {
       {/* CHAT AREA */}
       <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {messages.map((msg) => {
-          const isMe = user && msg.uid === user.uid;
+          const isMe = msg.deviceId === deviceId;
+          const readCount = msg.readBy ? msg.readBy.length : 0;
+          const readNames = msg.readBy ? msg.readBy.map(r => r.name).join(", ") : "";
           
           return (
             <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message`}>
@@ -176,9 +220,14 @@ export default function App() {
                 )}
 
                 <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <img src={msg.photoURL} alt="avatar" className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover"/>
+                  <img 
+                    src={msg.photoURL} 
+                    alt="avatar" 
+                    className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover"
+                  />
                   
                   <div className="relative">
+                    {/* Message Bubble */}
                     <div className={`
                       px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words
                       ${isMe 
@@ -188,12 +237,33 @@ export default function App() {
                     `}>
                       {msg.text}
                     </div>
+                    
+                    {/* INFO ROW: Time + Read Receipts */}
+                    <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
+                        
+                        {/* 1. Time */}
+                        <span>{getMessageTime(msg.createdAt)}</span>
+                        
+                        {/* 2. Read Receipt (Only for ME) */}
+                        {isMe && (
+                            <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
+                                {readCount > 0 ? (
+                                    <>
+                                        <span className="text-blue-500 font-bold">{readCount > 2 ? `${readCount} read` : readNames}</span>
+                                        <Eye size={12} className="text-blue-500"/>
+                                    </>
+                                ) : (
+                                    <Check size={12} />
+                                )}
+                            </div>
+                        )}
+                    </div>
 
+                    {/* Admin Delete */}
                     {isAdmin && (
                       <button 
                         onClick={() => handleDelete(msg.id)}
                         className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-10' : '-right-10'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity`}
-                        title="Delete this message"
                       >
                         <XCircle size={16} />
                       </button>
@@ -230,6 +300,7 @@ export default function App() {
               <Users size={32} />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Join the Chat</h2>
+            <p className="text-gray-500 text-sm mb-4">We've recognized your device!</p>
             <form onSubmit={handleSaveName}>
               <input 
                 autoFocus
