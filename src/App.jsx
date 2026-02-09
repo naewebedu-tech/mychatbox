@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, MessageCircle, Trash2, Lock, Unlock, User, Users, 
-  XCircle, Clock, Fingerprint, Check, Eye, Reply, X 
+  XCircle, Clock, Fingerprint, Check, Eye, Reply, X, LogOut, Key
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
@@ -14,6 +14,7 @@ import {
   collection, 
   addDoc, 
   setDoc,
+  getDoc,
   updateDoc,
   arrayUnion,
   deleteDoc,
@@ -40,16 +41,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- HELPER: DEVICE FINGERPRINT ---
-const getDeviceId = () => {
-  let id = localStorage.getItem('chat_device_id');
-  if (!id) {
-    id = "dev_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
-    localStorage.setItem('chat_device_id', id);
-  }
-  return id;
-};
-
+// --- HELPER: COLORS ---
 const getNameColor = (name) => {
   const colors = [
     'text-red-600', 'text-orange-600', 'text-amber-600', 
@@ -63,23 +55,53 @@ const getNameColor = (name) => {
 };
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [username, setUsername] = useState(() => localStorage.getItem('chat_username') || '');
-  const [deviceId] = useState(getDeviceId());
+  // Auth State
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  
+  // App User State (The Chat Identity)
+  const [username, setUsername] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  
+  // Data State
   const [messages, setMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
+  
+  // UI State
   const [newMessage, setNewMessage] = useState("");
-  const [replyingTo, setReplyingTo] = useState(null); // State for the message being replied to
+  const [replyingTo, setReplyingTo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showNameModal, setShowNameModal] = useState(!localStorage.getItem('chat_username'));
+  
+  // Login Form State
+  const [loginName, setLoginName] = useState("");
+  const [loginPass, setLoginPass] = useState("");
+  const [loginError, setLoginError] = useState("");
+
   const dummy = useRef();
   const typingTimeoutRef = useRef(null);
 
+  // 1. INITIALIZATION
   useEffect(() => {
-    signInAnonymously(auth).catch(() => setUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) }));
-    onAuthStateChanged(auth, (u) => { if(u) setUser(u); });
+    // Authenticate with Firebase for database access
+    // Added Fallback: If auth fails (e.g. config error), create a local fallback user so app still works
+    signInAnonymously(auth)
+      .catch((err) => {
+        console.warn("Auth failed, falling back to guest mode:", err);
+        setFirebaseUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) });
+      });
 
-    // 1. MESSAGES LISTENER
+    onAuthStateChanged(auth, (u) => { 
+      if(u) setFirebaseUser(u); 
+    });
+
+    // Check Local Storage for persistent login
+    const savedUser = localStorage.getItem('chat_app_user');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      setUsername(parsed.username);
+      setIsLoggedIn(true);
+    }
+
+    // 2. MESSAGES LISTENER
     const q = query(collection(db, "messages"), orderBy("createdAt"));
     const unsubMsg = onSnapshot(q, (snapshot) => {
       const loadedMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -87,14 +109,15 @@ export default function App() {
       setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
       // Auto-read logic
-      if (username) {
+      if (isLoggedIn && username) {
         snapshot.docs.forEach((docSnapshot) => {
             const msgData = docSnapshot.data();
-            if (msgData.deviceId !== deviceId) {
-                const alreadyRead = msgData.readBy?.some(reader => reader.deviceId === deviceId);
+            // If message is not from me
+            if (msgData.senderName !== username) {
+                const alreadyRead = msgData.readBy?.some(reader => reader.name === username);
                 if (!alreadyRead) {
                     updateDoc(docSnapshot.ref, {
-                        readBy: arrayUnion({ deviceId: deviceId, name: username, readAt: Date.now() })
+                        readBy: arrayUnion({ name: username, readAt: Date.now() })
                     }).catch(err => console.log("Read receipt error:", err));
                 }
             }
@@ -102,22 +125,79 @@ export default function App() {
       }
     });
 
-    // 2. TYPING STATUS LISTENER
+    // 3. TYPING STATUS LISTENER
     const unsubTyping = onSnapshot(collection(db, "typing"), (snapshot) => {
       const now = Date.now();
       const activeTypers = [];
       snapshot.forEach(doc => {
-        if (doc.id !== deviceId) {
+        if (doc.id !== username) { // Don't show myself
           const data = doc.data();
-          if (now - data.timestamp < 5000) activeTypers.push(data.displayName || "Someone");
+          if (now - data.timestamp < 3000) activeTypers.push(data.displayName);
         }
       });
       setTypingUsers(activeTypers);
     });
 
     return () => { unsubMsg(); unsubTyping(); };
-  }, [username, deviceId]);
+  }, [username, isLoggedIn]);
 
+  // --- LOGIN LOGIC ---
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError("");
+    
+    const cleanName = loginName.trim();
+    const cleanPass = loginPass.trim();
+
+    if (!cleanName || !cleanPass) {
+      setLoginError("Please enter both name and password.");
+      return;
+    }
+
+    try {
+      // Check if user exists in our custom 'users' collection
+      const userDocRef = doc(db, "chat_users", cleanName.toLowerCase());
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        // User exists, check password
+        const userData = userDoc.data();
+        if (userData.password === cleanPass) {
+          // Success: Login
+          completeLogin(cleanName);
+        } else {
+          setLoginError("Incorrect password for this user.");
+        }
+      } else {
+        // User doesn't exist, Create new account
+        await setDoc(userDocRef, {
+          username: cleanName,
+          password: cleanPass, // In a real app, hash this!
+          createdAt: serverTimestamp()
+        });
+        completeLogin(cleanName);
+      }
+    } catch (err) {
+      console.error(err);
+      setLoginError("Connection error. Try again.");
+    }
+  };
+
+  const completeLogin = (name) => {
+    setUsername(name);
+    setIsLoggedIn(true);
+    localStorage.setItem('chat_app_user', JSON.stringify({ username: name }));
+    setLoginName("");
+    setLoginPass("");
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('chat_app_user');
+    setIsLoggedIn(false);
+    setUsername("");
+  };
+
+  // --- MESSAGING LOGIC ---
   const getMessageTime = (createdAt) => {
     if (!createdAt) return "Sending...";
     const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
@@ -126,30 +206,29 @@ export default function App() {
 
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
-    if (!user || !username) return;
+    if (!isLoggedIn || !username) return;
 
-    setDoc(doc(db, "typing", deviceId), { displayName: username, timestamp: Date.now() });
+    setDoc(doc(db, "typing", username), { displayName: username, timestamp: Date.now() });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => { deleteDoc(doc(db, "typing", deviceId)); }, 2000);
+    typingTimeoutRef.current = setTimeout(() => { deleteDoc(doc(db, "typing", username)); }, 2000);
   };
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user) return;
+    if (!newMessage.trim() || !firebaseUser || !isLoggedIn) return;
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    deleteDoc(doc(db, "typing", deviceId));
+    deleteDoc(doc(db, "typing", username));
 
     try {
       await addDoc(collection(db, "messages"), {
         text: newMessage,
         createdAt: serverTimestamp(),
-        uid: user.uid,
-        deviceId: deviceId,
-        displayName: username || "Anonymous",
-        photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${deviceId}`,
+        senderName: username, // The unique ID for this message
+        displayName: username,
+        // Unique Avatar based on username
+        photoURL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${username}`,
         readBy: [],
-        // Attach reply data if exists
         replyTo: replyingTo ? {
           id: replyingTo.id,
           text: replyingTo.text,
@@ -157,7 +236,7 @@ export default function App() {
         } : null
       });
       setNewMessage("");
-      setReplyingTo(null); // Clear reply after sending
+      setReplyingTo(null);
     } catch (e) { console.error(e); }
   };
 
@@ -173,14 +252,6 @@ export default function App() {
       const q = query(collection(db, "messages"));
       const snapshot = await getDocs(q);
       snapshot.forEach((doc) => deleteDoc(doc.ref));
-    }
-  };
-
-  const handleSaveName = (e) => {
-    e.preventDefault();
-    if (username.trim()) {
-      localStorage.setItem('chat_username', username);
-      setShowNameModal(false);
     }
   };
 
@@ -200,18 +271,20 @@ export default function App() {
             <Users size={24} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-800 leading-none">Group Chat</h1>
+            <h1 className="text-xl font-bold text-gray-800 leading-none">Global Chat</h1>
             <span className="text-xs text-green-500 font-medium flex items-center gap-1 mt-1">
-              <Fingerprint size={12} className="inline mr-1" />
-              {username ? `Logged in as ${username}` : 'Guest Mode'}
+              <Key size={12} className="inline mr-1" />
+              {isLoggedIn ? `Logged in as ${username}` : 'Waiting for login...'}
             </span>
           </div>
         </div>
 
         <div className="flex gap-2 items-center">
-          <button onClick={() => setShowNameModal(true)} className="p-2 text-gray-400 hover:text-blue-600 rounded-full hover:bg-gray-100" title="Change Name">
-            <User size={20}/>
-          </button>
+          {isLoggedIn && (
+            <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-600 rounded-full hover:bg-red-50" title="Logout">
+              <LogOut size={20}/>
+            </button>
+          )}
           {isAdmin && (
             <button onClick={clearChat} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1" title="Clear All Messages">
                 <Trash2 size={20} />
@@ -226,7 +299,7 @@ export default function App() {
       {/* CHAT AREA */}
       <main className="flex-1 overflow-y-auto p-4 space-y-6">
         {messages.map((msg) => {
-          const isMe = msg.deviceId === deviceId;
+          const isMe = msg.senderName === username;
           const readCount = msg.readBy ? msg.readBy.length : 0;
           const readNames = msg.readBy ? msg.readBy.map(r => r.name).join(", ") : "";
           
@@ -250,18 +323,20 @@ export default function App() {
                   />
                   
                   <div className="relative">
-                    {/* REPLY BUTTON (Visible on Hover) */}
-                    <button 
-                      onClick={() => setReplyingTo(msg)}
-                      className={`
-                        absolute top-1/2 -translate-y-1/2 
-                        ${isMe ? '-left-10' : '-right-10'}
-                        p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
-                      `}
-                      title="Reply"
-                    >
-                      <Reply size={16} />
-                    </button>
+                    {/* REPLY BUTTON */}
+                    {isLoggedIn && (
+                      <button 
+                        onClick={() => setReplyingTo(msg)}
+                        className={`
+                          absolute top-1/2 -translate-y-1/2 
+                          ${isMe ? '-left-10' : '-right-10'}
+                          p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
+                        `}
+                        title="Reply"
+                      >
+                        <Reply size={16} />
+                      </button>
+                    )}
 
                     {/* Admin Delete */}
                     {isAdmin && (
@@ -281,7 +356,7 @@ export default function App() {
                         : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
                       }
                     `}>
-                      {/* QUOTED MESSAGE DISPLAY */}
+                      {/* QUOTED MESSAGE */}
                       {msg.replyTo && (
                         <div className={`
                           mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
@@ -335,60 +410,79 @@ export default function App() {
         <div ref={dummy}></div>
       </main>
 
-      {/* INPUT AREA */}
-      <div className="bg-white border-t border-gray-200">
-        
-        {/* REPLY PREVIEW BAR */}
-        {replyingTo && (
-          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
-            <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
-              <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
-              <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
+      {/* INPUT AREA (Only if logged in) */}
+      {isLoggedIn ? (
+        <div className="bg-white border-t border-gray-200">
+          
+          {/* REPLY PREVIEW BAR */}
+          {replyingTo && (
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
+              <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
+                <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
+                <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
+              </div>
+              <button 
+                onClick={() => setReplyingTo(null)}
+                className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button 
-              onClick={() => setReplyingTo(null)}
-              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
-            >
-              <X size={18} />
-            </button>
+          )}
+
+          <div className="p-4">
+            <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
+              <input
+                value={newMessage}
+                onChange={handleTyping}
+                placeholder={replyingTo ? "Type your reply..." : `Message as ${username}...`}
+                className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
+              />
+              <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
+                <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
+              </button>
+            </form>
           </div>
-        )}
-
-        <div className="p-4">
-          <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
-            <input
-              value={newMessage}
-              onChange={handleTyping}
-              placeholder={replyingTo ? "Type your reply..." : `Message as ${username}...`}
-              className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
-            />
-            <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
-              <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
-            </button>
-          </form>
         </div>
-      </div>
+      ) : (
+        <div className="p-4 bg-gray-50 border-t border-gray-200 text-center text-gray-500 text-sm">
+          Please login to send messages.
+        </div>
+      )}
 
-      {/* NAME MODAL */}
-      {showNameModal && (
+      {/* LOGIN/REGISTER MODAL */}
+      {!isLoggedIn && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Users size={32} />
+              <Key size={32} />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Join the Chat</h2>
-            <p className="text-gray-500 text-sm mb-4">We've recognized your device!</p>
-            <form onSubmit={handleSaveName}>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Secure Login</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              Enter a name and password. <br/>
+              <span className="text-xs opacity-80">(New names are automatically registered)</span>
+            </p>
+            
+            <form onSubmit={handleLogin} className="space-y-3">
               <input 
                 autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Ex: IronMan, Sarah..."
-                maxLength={15}
-                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 mb-4 outline-none font-bold text-center text-lg text-gray-800"
+                value={loginName}
+                onChange={(e) => setLoginName(e.target.value)}
+                placeholder="Username"
+                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none font-bold text-center text-lg text-gray-800"
               />
-              <button type="submit" disabled={!username.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg">
-                Start Chatting
+              <input 
+                type="password"
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                placeholder="Password"
+                className="w-full bg-gray-50 border border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 outline-none text-center text-lg text-gray-800"
+              />
+              
+              {loginError && <p className="text-red-500 text-xs font-bold">{loginError}</p>}
+
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95">
+                Login / Register
               </button>
             </form>
           </div>
