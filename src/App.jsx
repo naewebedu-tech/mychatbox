@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Users, Lock, Unlock, User, 
-  XCircle, Eye, Reply, X, LogOut, Key, Hash, ArrowRight, ShieldCheck, Globe
+  XCircle, Eye, Reply, X, LogOut, Key, Hash, ArrowRight, ShieldCheck, Globe, ArrowLeft, Check
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
@@ -366,7 +366,6 @@ export default function App() {
             <button type="submit" disabled={!roomInput.trim()} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
               Enter Secret Room <ArrowRight size={18} />
             </button>
-            <p className="text-[10px] text-gray-400">Use <span className="font-mono bg-gray-100 px-1 rounded">brosis123</span> for old history</p>
           </form>
 
           <div className="mt-6 pt-6 border-t border-gray-100">
