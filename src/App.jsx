@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Users, Lock, Unlock, User, 
-  XCircle, Eye, Reply, X, LogOut, Key, Hash, ArrowRight, ShieldCheck, Globe, ArrowLeft, Check
+  XCircle, Eye, Reply, X, LogOut, Key, Hash, ArrowRight, ShieldCheck, Globe, ArrowLeft, Check, Image as ImageIcon
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { 
@@ -54,8 +54,49 @@ const getNameColor = (name) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// --- HELPER: IMAGE COMPRESSION ---
+// Firestore has a 1MB limit per document. 
+// This function resizes and compresses images to ensure they fit.
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Resize to max 800px width
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Compress to JPEG at 0.7 quality to save space
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(dataUrl);
+      };
+    };
+  });
+};
+
 // --- COMPONENT: SWIPEABLE MESSAGE ITEM ---
-// Handles touch and mouse logic for individual messages
 const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, getMessageTime }) => {
   const [startX, setStartX] = useState(0);
   const [currentX, setCurrentX] = useState(0);
@@ -83,7 +124,7 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
     setCurrentX(0);
   };
 
-  // --- MOUSE HANDLERS (For Desktop Swipe) ---
+  // --- MOUSE HANDLERS ---
   const handleMouseDown = (e) => {
     setStartX(e.clientX);
     setIsSwiping(true);
@@ -121,7 +162,6 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
     >
-      {/* BACKGROUND REPLY ICON (Visible during swipe) */}
       <div 
         className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center transition-all duration-200 ease-out"
         style={{ 
@@ -132,12 +172,10 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
         <Reply size={24} className="bg-gray-100 p-1 rounded-full text-blue-500 shadow-sm" />
       </div>
 
-      {/* MOVABLE CONTENT CONTAINER */}
       <div 
         className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[60%] transition-transform duration-200 ease-out`}
         style={{ transform: `translateX(${currentX}px)` }}
       >
-        {/* Name Label */}
         {!isMe && (
           <span className={`text-[11px] font-bold ml-12 mb-1 ${getNameColor(msg.displayName || 'Anonymous')}`}>
             {msg.displayName || "Anonymous"}
@@ -145,7 +183,6 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
         )}
 
         <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-          {/* Avatar */}
           <img 
             src={msg.photoURL} 
             alt="avatar" 
@@ -153,7 +190,6 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
           />
           
           <div className="relative">
-            {/* HOVER REPLY BUTTON (Desktop fallback) */}
             <button 
               onClick={() => onReply(msg)}
               className={`
@@ -166,7 +202,6 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
               <Reply size={16} />
             </button>
 
-            {/* Admin Delete */}
             {isAdmin && (
               <button 
                 onClick={() => onDelete(msg.id)}
@@ -176,7 +211,6 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
               </button>
             )}
 
-            {/* Message Bubble */}
             <div className={`
               px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words relative
               ${isMe 
@@ -184,6 +218,7 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
                 : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
               }
             `}>
+              {/* QUOTED MESSAGE */}
               {msg.replyTo && (
                 <div className={`
                   mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
@@ -199,10 +234,19 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
                   </p>
                 </div>
               )}
+
+              {/* IMAGE DISPLAY */}
+              {msg.image && (
+                <img 
+                  src={msg.image} 
+                  alt="shared" 
+                  className="rounded-lg mb-2 max-h-60 w-full object-cover border border-black/10" 
+                />
+              )}
+
               {msg.text}
             </div>
             
-            {/* INFO ROW */}
             <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
                 <span>{getMessageTime(msg.createdAt)}</span>
                 {isMe && (
@@ -234,6 +278,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [imagePreview, setImagePreview] = useState(null); 
   const [replyingTo, setReplyingTo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -243,6 +288,7 @@ export default function App() {
 
   const dummy = useRef();
   const typingTimeoutRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const getMessagesRef = () => {
     if (roomCode === 'brosis123') return collection(db, "messages");
@@ -392,9 +438,38 @@ export default function App() {
     typingTimeoutRef.current = setTimeout(() => { deleteDoc(typingDocRef); }, 2000);
   };
 
+  // --- UPDATED IMAGE HANDLER ---
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Increased limit check to 10MB to allow phone photos
+      if (file.size > 10000000) {
+        alert("Image too large! Max 10MB.");
+        return;
+      }
+      
+      try {
+        // Compress image before setting state
+        const compressedBase64 = await compressImage(file);
+        
+        // Final safety check for Firestore limit (1MB = 1048576 bytes)
+        // Base64 is larger than binary, so we keep safe margin
+        if (compressedBase64.length > 1000000) {
+             alert("Image is too complex to send even after compression. Try a smaller one.");
+             return;
+        }
+        
+        setImagePreview(compressedBase64);
+      } catch (error) {
+        console.error("Compression failed:", error);
+        alert("Failed to process image.");
+      }
+    }
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !firebaseUser || !isLoggedIn || !roomCode) return;
+    if ((!newMessage.trim() && !imagePreview) || !firebaseUser || !isLoggedIn || !roomCode) return;
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     deleteDoc(doc(getTypingRef(), username));
@@ -402,6 +477,7 @@ export default function App() {
     try {
       await addDoc(getMessagesRef(), {
         text: newMessage,
+        image: imagePreview,
         createdAt: serverTimestamp(),
         senderName: username,
         displayName: username,
@@ -414,6 +490,7 @@ export default function App() {
         } : null
       });
       setNewMessage("");
+      setImagePreview(null);
       setReplyingTo(null);
     } catch (e) { console.error(e); }
   };
@@ -565,25 +642,61 @@ export default function App() {
       </main>
 
       <div className="bg-white border-t border-gray-200">
+        {/* IMAGE PREVIEW */}
+        {imagePreview && (
+          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 animate-in slide-in-from-bottom-2">
+            <img src={imagePreview} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-gray-300" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-gray-700">Image attached</p>
+              <p className="text-[10px] text-gray-500">Ready to send</p>
+            </div>
+            <button 
+              onClick={() => { setImagePreview(null); if(fileInputRef.current) fileInputRef.current.value = ''; }}
+              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* REPLY PREVIEW */}
         {replyingTo && (
           <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
             <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1 min-w-0">
               <p className="text-xs font-bold text-blue-600 truncate">Replying to {replyingTo.displayName}</p>
-              <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
+              <p className="text-xs text-gray-500 truncate">{replyingTo.text || "Image"}</p>
             </div>
             <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"><X size={18} /></button>
           </div>
         )}
+
         <div className="p-4">
-          <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
+          <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-end">
+            {/* FILE INPUT */}
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              onChange={handleImageSelect}
+              className="hidden" 
+              accept="image/*"
+            />
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current.click()}
+              className="p-3 text-gray-400 hover:text-blue-600 bg-gray-100 hover:bg-blue-50 rounded-full transition-colors"
+              title="Upload Image"
+            >
+              <ImageIcon size={20} />
+            </button>
+
             <input
               value={newMessage}
               onChange={handleTyping}
               placeholder={replyingTo ? "Type your reply..." : `Message #${roomCode} as ${username}...`}
-              className="flex-1 bg-gray-100 text-gray-800 rounded-full px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
+              className="flex-1 bg-gray-100 text-gray-800 rounded-2xl px-6 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all border border-transparent focus:bg-white"
             />
-            <button type="submit" disabled={!newMessage.trim()} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
-              <Send size={20} className={newMessage.trim() ? 'ml-0.5' : ''} />
+            <button type="submit" disabled={!newMessage.trim() && !imagePreview} className="bg-blue-600 hover:bg-blue-700 text-white p-3.5 rounded-full shadow-lg shadow-blue-200 active:scale-95 transition-all">
+              <Send size={20} className={newMessage.trim() || imagePreview ? 'ml-0.5' : ''} />
             </button>
           </form>
         </div>
