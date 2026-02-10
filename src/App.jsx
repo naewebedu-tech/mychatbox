@@ -54,28 +54,189 @@ const getNameColor = (name) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// --- COMPONENT: SWIPEABLE MESSAGE ITEM ---
+// Handles touch and mouse logic for individual messages
+const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, getMessageTime }) => {
+  const [startX, setStartX] = useState(0);
+  const [currentX, setCurrentX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const readCount = msg.readBy ? msg.readBy.length : 0;
+  const readNames = msg.readBy ? msg.readBy.map(r => r.name).join(", ") : "";
+
+  // --- TOUCH HANDLERS ---
+  const handleTouchStart = (e) => {
+    setStartX(e.targetTouches[0].clientX);
+    setIsSwiping(true);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isSwiping) return;
+    const diff = e.targetTouches[0].clientX - startX;
+    if (diff > 0 && diff < 120) {
+      setCurrentX(diff);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsSwiping(false);
+    if (currentX > 60) onReply(msg);
+    setCurrentX(0);
+  };
+
+  // --- MOUSE HANDLERS (For Desktop Swipe) ---
+  const handleMouseDown = (e) => {
+    setStartX(e.clientX);
+    setIsSwiping(true);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isSwiping) return;
+    const diff = e.clientX - startX;
+    if (diff > 0 && diff < 120) {
+      setCurrentX(diff);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsSwiping(false);
+    if (currentX > 60) onReply(msg);
+    setCurrentX(0);
+  };
+
+  const handleMouseLeave = () => {
+    if (isSwiping) {
+        setIsSwiping(false);
+        setCurrentX(0);
+    }
+  };
+
+  return (
+    <div 
+      className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message relative overflow-hidden select-none touch-pan-y`}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* BACKGROUND REPLY ICON (Visible during swipe) */}
+      <div 
+        className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center transition-all duration-200 ease-out"
+        style={{ 
+          opacity: currentX > 20 ? 1 : 0, 
+          transform: `translateY(-50%) scale(${currentX > 50 ? 1.2 : 0.8})` 
+        }}
+      >
+        <Reply size={24} className="bg-gray-100 p-1 rounded-full text-blue-500 shadow-sm" />
+      </div>
+
+      {/* MOVABLE CONTENT CONTAINER */}
+      <div 
+        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[60%] transition-transform duration-200 ease-out`}
+        style={{ transform: `translateX(${currentX}px)` }}
+      >
+        {/* Name Label */}
+        {!isMe && (
+          <span className={`text-[11px] font-bold ml-12 mb-1 ${getNameColor(msg.displayName || 'Anonymous')}`}>
+            {msg.displayName || "Anonymous"}
+          </span>
+        )}
+
+        <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+          {/* Avatar */}
+          <img 
+            src={msg.photoURL} 
+            alt="avatar" 
+            className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover pointer-events-none"
+          />
+          
+          <div className="relative">
+            {/* HOVER REPLY BUTTON (Desktop fallback) */}
+            <button 
+              onClick={() => onReply(msg)}
+              className={`
+                hidden md:block absolute top-1/2 -translate-y-1/2 
+                ${isMe ? '-left-10' : '-right-10'}
+                p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
+              `}
+              title="Reply"
+            >
+              <Reply size={16} />
+            </button>
+
+            {/* Admin Delete */}
+            {isAdmin && (
+              <button 
+                onClick={() => onDelete(msg.id)}
+                className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-20' : '-right-20'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-20`}
+              >
+                <XCircle size={16} />
+              </button>
+            )}
+
+            {/* Message Bubble */}
+            <div className={`
+              px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words relative
+              ${isMe 
+                ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' 
+                : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
+              }
+            `}>
+              {msg.replyTo && (
+                <div className={`
+                  mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
+                  ${isMe ? 'border-blue-300 bg-blue-700/50 text-blue-100' : 'border-blue-500 bg-gray-100 text-gray-500'}
+                  overflow-hidden
+                `}>
+                  <p className="font-bold opacity-100 mb-0.5">{msg.replyTo.displayName}</p>
+                  <p 
+                    className="opacity-80 break-words" 
+                    style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                  >
+                    {msg.replyTo.text}
+                  </p>
+                </div>
+              )}
+              {msg.text}
+            </div>
+            
+            {/* INFO ROW */}
+            <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
+                <span>{getMessageTime(msg.createdAt)}</span>
+                {isMe && (
+                    <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
+                        {readCount > 0 ? (
+                            <>
+                                <span className="text-blue-500 font-bold">{readCount > 2 ? `${readCount} read` : readNames}</span>
+                                <Eye size={12} className="text-blue-500"/>
+                            </>
+                        ) : (
+                            <Check size={12} />
+                        )}
+                    </div>
+                )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
-  // Auth State
   const [firebaseUser, setFirebaseUser] = useState(null);
-  
-  // App User State
   const [username, setUsername] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  
-  // Chat Room State
-  const [roomCode, setRoomCode] = useState(null); // Null means "Not in a room yet"
+  const [roomCode, setRoomCode] = useState(null); 
   const [roomInput, setRoomInput] = useState("");
-  
-  // Data State
   const [messages, setMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
-  
-  // UI State
   const [newMessage, setNewMessage] = useState("");
   const [replyingTo, setReplyingTo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // Login Form State
   const [loginName, setLoginName] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -83,11 +244,6 @@ export default function App() {
   const dummy = useRef();
   const typingTimeoutRef = useRef(null);
 
-  // --- HELPER: GET COLLECTION REF ---
-  // LOGIC UPDATE: 
-  // 1. 'brosis123' -> maps to root 'messages' (The OLD chat history)
-  // 2. 'public' -> maps to rooms/public/messages (The NEW open chat)
-  // 3. Any other code -> maps to rooms/{code}/messages
   const getMessagesRef = () => {
     if (roomCode === 'brosis123') return collection(db, "messages");
     if (roomCode === 'public') return collection(db, "rooms", "public", "messages");
@@ -100,7 +256,6 @@ export default function App() {
     return collection(db, "rooms", roomCode, "typing");
   };
 
-  // 1. INITIALIZATION
   useEffect(() => {
     signInAnonymously(auth)
       .catch((err) => {
@@ -108,9 +263,7 @@ export default function App() {
         setFirebaseUser({ uid: "guest_" + Math.random().toString(36).substr(2, 9) });
       });
 
-    onAuthStateChanged(auth, (u) => { 
-      if(u) setFirebaseUser(u); 
-    });
+    onAuthStateChanged(auth, (u) => { if(u) setFirebaseUser(u); });
 
     const savedUser = localStorage.getItem('chat_app_user');
     if (savedUser) {
@@ -120,9 +273,7 @@ export default function App() {
     }
   }, []);
 
-  // 2. DATA LISTENERS
   useEffect(() => {
-    // Only listen if we are logged in AND have entered a room
     if (!isLoggedIn || !roomCode) return;
 
     setMessages([]); 
@@ -142,7 +293,7 @@ export default function App() {
                 if (!alreadyRead) {
                     updateDoc(docSnapshot.ref, {
                         readBy: arrayUnion({ name: username, readAt: Date.now() })
-                    }).catch(err => console.log("Read receipt error:", err));
+                    }).catch(err => console.log("Read error:", err));
                 }
             }
         });
@@ -164,11 +315,9 @@ export default function App() {
     return () => { unsubMsg(); unsubTyping(); };
   }, [username, isLoggedIn, roomCode]);
 
-  // --- LOGIN LOGIC ---
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError("");
-    
     const cleanName = loginName.trim();
     const cleanPass = loginPass.trim();
 
@@ -183,11 +332,8 @@ export default function App() {
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        if (userData.password === cleanPass) {
-          completeLogin(cleanName);
-        } else {
-          setLoginError("Incorrect password for this user.");
-        }
+        if (userData.password === cleanPass) completeLogin(cleanName);
+        else setLoginError("Incorrect password.");
       } else {
         await setDoc(userDocRef, {
           username: cleanName,
@@ -197,7 +343,6 @@ export default function App() {
         completeLogin(cleanName);
       }
     } catch (err) {
-      console.error(err);
       setLoginError("Connection error. Try again.");
     }
   };
@@ -214,29 +359,22 @@ export default function App() {
     localStorage.removeItem('chat_app_user');
     setIsLoggedIn(false);
     setUsername("");
-    setRoomCode(null); // Reset room on logout
+    setRoomCode(null);
   };
 
-  // --- ROOM LOGIC ---
   const handleJoinRoom = (e) => {
     e.preventDefault();
-    if(roomInput.trim()) {
-      setRoomCode(roomInput.trim().toLowerCase());
-    }
+    if(roomInput.trim()) setRoomCode(roomInput.trim().toLowerCase());
   };
 
-  // Maps to the NEW open public room
-  const joinPublicRoom = () => {
-    setRoomCode('public');
-  };
+  const joinPublicRoom = () => setRoomCode('public');
 
   const exitRoom = () => {
     setRoomCode(null);
     setMessages([]);
-    setRoomInput(""); // Clear the input so it doesn't remember the code
+    setRoomInput("");
   };
 
-  // --- MESSAGING LOGIC ---
   const getMessageTime = (createdAt) => {
     if (!createdAt) return "Sending...";
     const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
@@ -287,8 +425,7 @@ export default function App() {
   };
 
   const clearChat = async () => {
-    if (!isAdmin) return;
-    if (confirm("⚠️ Clear ALL messages in this room?")) {
+    if (!isAdmin && confirm("⚠️ Clear ALL messages in this room?")) {
       const q = query(getMessagesRef());
       const snapshot = await getDocs(q);
       snapshot.forEach((doc) => deleteDoc(doc.ref));
@@ -301,7 +438,6 @@ export default function App() {
     else alert("Wrong password");
   };
 
-  // --- RENDER CONDITION: LOGIN SCREEN ---
   if (!isLoggedIn) {
     return (
       <div className="flex flex-col h-screen bg-gray-50 items-center justify-center p-4">
@@ -310,9 +446,7 @@ export default function App() {
             <Key size={32} />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Secure Login</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            Enter a name and password to start.
-          </p>
+          <p className="text-gray-500 text-sm mb-6">Enter a name and password to start.</p>
           <form onSubmit={handleLogin} className="space-y-3">
             <input 
               autoFocus
@@ -338,7 +472,6 @@ export default function App() {
     );
   }
 
-  // --- RENDER CONDITION: ROOM ENTRY SCREEN ---
   if (!roomCode) {
     return (
       <div className="flex flex-col h-screen bg-gray-50 items-center justify-center p-4">
@@ -347,11 +480,7 @@ export default function App() {
             <ShieldCheck size={32} />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Secret Code Entry</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            Welcome, <span className="font-bold text-gray-800">{username}</span>.<br/>
-            Enter a room code to access messages.
-          </p>
-          
+          <p className="text-gray-500 text-sm mb-6">Welcome, <span className="font-bold text-gray-800">{username}</span>.</p>
           <form onSubmit={handleJoinRoom} className="space-y-4">
             <div className="relative">
               <Hash className="absolute left-4 top-3.5 text-gray-400" size={20} />
@@ -366,27 +495,22 @@ export default function App() {
             <button type="submit" disabled={!roomInput.trim()} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
               Enter Secret Room <ArrowRight size={18} />
             </button>
+            <p className="text-[10px] text-gray-400">Use <span className="font-mono bg-gray-100 px-1 rounded">brosis123</span> for old history</p>
           </form>
-
           <div className="mt-6 pt-6 border-t border-gray-100">
             <p className="text-xs text-gray-400 mb-3">OR</p>
             <button onClick={joinPublicRoom} className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
               <Globe size={18} /> Join Open Public Chat
             </button>
-            <button onClick={handleLogout} className="mt-4 text-xs text-red-400 hover:text-red-600 underline">
-              Logout
-            </button>
+            <button onClick={handleLogout} className="mt-4 text-xs text-red-400 hover:text-red-600 underline">Logout</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // --- MAIN CHAT RENDER ---
   return (
     <div className="flex flex-col h-screen bg-gray-50 font-sans">
-      
-      {/* HEADER */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-blue-600 p-2 rounded-xl text-white shadow-blue-200 shadow-lg">
@@ -396,135 +520,35 @@ export default function App() {
             <h1 className="text-xl font-bold text-gray-800 leading-none">Global Chat</h1>
             <div className="flex items-center gap-2 mt-1">
                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 border border-purple-200">
-                 <Hash size={10} />
-                 {roomCode === 'brosis123' ? 'Private History' : roomCode}
+                 <Hash size={10} /> {roomCode === 'brosis123' ? 'Private History' : roomCode}
                </span>
                <span className="text-xs text-green-500 font-medium flex items-center gap-1">
-                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                 {username}
+                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> {username}
                </span>
             </div>
           </div>
         </div>
-
         <div className="flex gap-2 items-center">
-          {/* GET OUT BUTTON */}
-          <button 
-            onClick={exitRoom} 
-            className="text-xs bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors border border-gray-200" 
-            title="Leave Room"
-          >
-            Get Out
-          </button>
-          
-          <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-600 rounded-full hover:bg-red-50" title="Logout">
-            <LogOut size={20}/>
-          </button>
-          {isAdmin && (
-            <button onClick={clearChat} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1" title="Clear All Messages">
-                <Trash2 size={20} />
-            </button>
-          )}
-          <button onClick={toggleAdmin} className={`p-2 rounded-full ${isAdmin ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>
-            {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
-          </button>
+          <button onClick={exitRoom} className="text-xs bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors border border-gray-200">Get Out</button>
+          <button onClick={handleLogout} className="p-2 text-red-400 hover:text-red-600 rounded-full hover:bg-red-50" title="Logout"><LogOut size={20}/></button>
+          {isAdmin && <button onClick={clearChat} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 mr-1" title="Clear All"><Trash2 size={20} /></button>}
+          <button onClick={toggleAdmin} className={`p-2 rounded-full ${isAdmin ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'}`}>{isAdmin ? <Unlock size={20} /> : <Lock size={20} />}</button>
         </div>
       </header>
 
-      {/* CHAT AREA */}
       <main className="flex-1 overflow-y-auto p-4 space-y-6">
-        {messages.map((msg) => {
-          const isMe = msg.senderName === username;
-          const readCount = msg.readBy ? msg.readBy.length : 0;
-          const readNames = msg.readBy ? msg.readBy.map(r => r.name).join(", ") : "";
-          
-          return (
-            <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message`}>
-              <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[60%]`}>
-                
-                {/* Name Label */}
-                {!isMe && (
-                  <span className={`text-[11px] font-bold ml-12 mb-1 ${getNameColor(msg.displayName || 'Anonymous')}`}>
-                    {msg.displayName || "Anonymous"}
-                  </span>
-                )}
-
-                <div className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {/* Avatar */}
-                  <img 
-                    src={msg.photoURL} 
-                    alt="avatar" 
-                    className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover"
-                  />
-                  
-                  <div className="relative">
-                    {/* REPLY BUTTON */}
-                    <button 
-                      onClick={() => setReplyingTo(msg)}
-                      className={`
-                        absolute top-1/2 -translate-y-1/2 
-                        ${isMe ? '-left-10' : '-right-10'}
-                        p-2 bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/message:opacity-100 transition-opacity z-10
-                      `}
-                      title="Reply"
-                    >
-                      <Reply size={16} />
-                    </button>
-
-                    {/* Admin Delete */}
-                    {isAdmin && (
-                      <button 
-                        onClick={() => handleDelete(msg.id)}
-                        className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-20' : '-right-20'} p-2 bg-white rounded-full shadow-md text-red-500 hover:bg-red-50 opacity-0 group-hover/message:opacity-100 transition-opacity`}
-                      >
-                        <XCircle size={16} />
-                      </button>
-                    )}
-
-                    {/* Message Bubble */}
-                    <div className={`
-                      px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words relative
-                      ${isMe 
-                        ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' 
-                        : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
-                      }
-                    `}>
-                      {msg.replyTo && (
-                        <div className={`
-                          mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
-                          ${isMe ? 'border-blue-300 bg-blue-700/50 text-blue-100' : 'border-blue-500 bg-gray-100 text-gray-500'}
-                        `}>
-                          <p className="font-bold opacity-100 mb-0.5">{msg.replyTo.displayName}</p>
-                          <p className="truncate opacity-80">{msg.replyTo.text}</p>
-                        </div>
-                      )}
-                      {msg.text}
-                    </div>
-                    
-                    {/* INFO ROW */}
-                    <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
-                        <span>{getMessageTime(msg.createdAt)}</span>
-                        {isMe && (
-                            <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
-                                {readCount > 0 ? (
-                                    <>
-                                        <span className="text-blue-500 font-bold">{readCount > 2 ? `${readCount} read` : readNames}</span>
-                                        <Eye size={12} className="text-blue-500"/>
-                                    </>
-                                ) : (
-                                    <Check size={12} />
-                                )}
-                            </div>
-                        )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        
-        {/* TYPING INDICATOR */}
+        {messages.map((msg) => (
+          <SwipeableMessage 
+            key={msg.id} 
+            msg={msg} 
+            isMe={msg.senderName === username} 
+            username={username}
+            isAdmin={isAdmin}
+            onDelete={handleDelete}
+            onReply={setReplyingTo}
+            getMessageTime={getMessageTime}
+          />
+        ))}
         {typingUsers.length > 0 && (
           <div className="flex w-full justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
              <div className="flex items-end gap-2 max-w-[85%]">
@@ -537,27 +561,19 @@ export default function App() {
              </div>
           </div>
         )}
-
         <div ref={dummy}></div>
       </main>
 
-      {/* INPUT AREA */}
       <div className="bg-white border-t border-gray-200">
         {replyingTo && (
           <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 animate-in slide-in-from-bottom-2">
-            <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1">
-              <p className="text-xs font-bold text-blue-600">Replying to {replyingTo.displayName}</p>
+            <div className="flex-1 border-l-4 border-blue-500 pl-3 py-1 min-w-0">
+              <p className="text-xs font-bold text-blue-600 truncate">Replying to {replyingTo.displayName}</p>
               <p className="text-xs text-gray-500 truncate">{replyingTo.text}</p>
             </div>
-            <button 
-              onClick={() => setReplyingTo(null)}
-              className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
-            >
-              <X size={18} />
-            </button>
+            <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"><X size={18} /></button>
           </div>
         )}
-
         <div className="p-4">
           <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-center">
             <input
