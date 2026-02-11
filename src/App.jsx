@@ -54,48 +54,6 @@ const getNameColor = (name) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-// --- HELPER: IMAGE COMPRESSION ---
-// Firestore has a 1MB limit per document. 
-// This function resizes and compresses images to ensure they fit.
-const compressImage = (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Resize to max 800px width
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Compress to JPEG at 0.7 quality to save space
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        resolve(dataUrl);
-      };
-    };
-  });
-};
-
 // --- COMPONENT: SWIPEABLE MESSAGE ITEM ---
 const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, getMessageTime }) => {
   const [startX, setStartX] = useState(0);
@@ -278,7 +236,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [imagePreview, setImagePreview] = useState(null); 
+  const [imagePreview, setImagePreview] = useState(null); // Image State
   const [replyingTo, setReplyingTo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -438,32 +396,19 @@ export default function App() {
     typingTimeoutRef.current = setTimeout(() => { deleteDoc(typingDocRef); }, 2000);
   };
 
-  // --- UPDATED IMAGE HANDLER ---
-  const handleImageSelect = async (e) => {
+  const handleImageSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Increased limit check to 10MB to allow phone photos
-      if (file.size > 10000000) {
-        alert("Image too large! Max 10MB.");
+      // Very basic size check (e.g. 500KB) to prevent huge DB costs
+      if (file.size > 500000) {
+        alert("Image too large! Please choose a smaller image (under 500KB).");
         return;
       }
-      
-      try {
-        // Compress image before setting state
-        const compressedBase64 = await compressImage(file);
-        
-        // Final safety check for Firestore limit (1MB = 1048576 bytes)
-        // Base64 is larger than binary, so we keep safe margin
-        if (compressedBase64.length > 1000000) {
-             alert("Image is too complex to send even after compression. Try a smaller one.");
-             return;
-        }
-        
-        setImagePreview(compressedBase64);
-      } catch (error) {
-        console.error("Compression failed:", error);
-        alert("Failed to process image.");
-      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
