@@ -54,6 +54,45 @@ const getNameColor = (name) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// --- HELPER: IMAGE COMPRESSION ---
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; 
+        const MAX_HEIGHT = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(dataUrl);
+      };
+    };
+  });
+};
+
 // --- COMPONENT: SWIPEABLE MESSAGE ITEM ---
 const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, getMessageTime }) => {
   const [startX, setStartX] = useState(0);
@@ -61,64 +100,38 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
   const [isSwiping, setIsSwiping] = useState(false);
   const readCount = msg.readBy ? msg.readBy.length : 0;
   const readNames = msg.readBy ? msg.readBy.map(r => r.name).join(", ") : "";
+  const isImage = !!msg.image;
 
-  // --- TOUCH HANDLERS ---
-  const handleTouchStart = (e) => {
-    setStartX(e.targetTouches[0].clientX);
+  // --- TOUCH & MOUSE HANDLERS ---
+  const handleStart = (clientX) => {
+    setStartX(clientX);
     setIsSwiping(true);
   };
 
-  const handleTouchMove = (e) => {
+  const handleMove = (clientX) => {
     if (!isSwiping) return;
-    const diff = e.targetTouches[0].clientX - startX;
+    const diff = clientX - startX;
     if (diff > 0 && diff < 120) {
       setCurrentX(diff);
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleEnd = () => {
     setIsSwiping(false);
     if (currentX > 60) onReply(msg);
     setCurrentX(0);
-  };
-
-  // --- MOUSE HANDLERS ---
-  const handleMouseDown = (e) => {
-    setStartX(e.clientX);
-    setIsSwiping(true);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isSwiping) return;
-    const diff = e.clientX - startX;
-    if (diff > 0 && diff < 120) {
-      setCurrentX(diff);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsSwiping(false);
-    if (currentX > 60) onReply(msg);
-    setCurrentX(0);
-  };
-
-  const handleMouseLeave = () => {
-    if (isSwiping) {
-        setIsSwiping(false);
-        setCurrentX(0);
-    }
   };
 
   return (
     <div 
       className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group/message relative overflow-hidden select-none touch-pan-y`}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
+      onTouchStart={(e) => handleStart(e.targetTouches[0].clientX)}
+      onTouchMove={(e) => handleMove(e.targetTouches[0].clientX)}
+      onTouchEnd={handleEnd}
+      onMouseDown={(e) => handleStart(e.clientX)}
+      onMouseMove={(e) => handleMove(e.clientX)}
+      onMouseUp={handleEnd}
+      onMouseLeave={() => { setIsSwiping(false); setCurrentX(0); }}
     >
       <div 
         className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 flex items-center justify-center transition-all duration-200 ease-out"
@@ -147,7 +160,7 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
             className="w-8 h-8 rounded-full bg-gray-200 border border-gray-200 shadow-sm mb-1 object-cover pointer-events-none"
           />
           
-          <div className="relative">
+          <div className="relative flex flex-col items-end">
             <button 
               onClick={() => onReply(msg)}
               className={`
@@ -169,18 +182,23 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
               </button>
             )}
 
+            {/* MESSAGE BUBBLE CONTAINER */}
             <div className={`
-              px-5 py-3 shadow-sm text-[15px] leading-relaxed break-words relative
-              ${isMe 
-                ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' 
-                : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'
+              text-[15px] leading-relaxed break-words relative flex flex-col
+              ${isImage 
+                ? 'bg-transparent items-end' 
+                : `px-5 py-3 shadow-sm ${isMe ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-none'}`
               }
             `}>
+              
               {/* QUOTED MESSAGE */}
               {msg.replyTo && (
                 <div className={`
-                  mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90
-                  ${isMe ? 'border-blue-300 bg-blue-700/50 text-blue-100' : 'border-blue-500 bg-gray-100 text-gray-500'}
+                  mb-2 text-xs border-l-4 pl-2 py-1 rounded-r opacity-90 w-full text-left
+                  ${isImage 
+                    ? 'bg-gray-100 text-gray-500 border-gray-400 rounded-lg p-2 mb-1 shadow-sm' 
+                    : (isMe ? 'border-blue-300 bg-blue-700/50 text-blue-100' : 'border-blue-500 bg-gray-100 text-gray-500')
+                  }
                   overflow-hidden
                 `}>
                   <p className="font-bold opacity-100 mb-0.5">{msg.replyTo.displayName}</p>
@@ -188,38 +206,81 @@ const SwipeableMessage = ({ msg, isMe, username, isAdmin, onDelete, onReply, get
                     className="opacity-80 break-words" 
                     style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                   >
-                    {msg.replyTo.text}
+                    {msg.replyTo.text || "📷 Photo"}
                   </p>
                 </div>
               )}
 
-              {/* IMAGE DISPLAY */}
+              {/* IMAGE CONTENT */}
               {msg.image && (
-                <img 
-                  src={msg.image} 
-                  alt="shared" 
-                  className="rounded-lg mb-2 max-h-60 w-full object-cover border border-black/10" 
-                />
+                <div className="relative">
+                  <img 
+                    src={msg.image} 
+                    alt="shared" 
+                    className="rounded-2xl max-h-72 w-full object-cover border border-black/10 shadow-sm" 
+                  />
+                  {/* Overlay Timestamp for Image Only */}
+                  {!msg.text && (
+                    <div className="absolute bottom-2 right-2 bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded-full text-white text-[10px] flex items-center gap-1 shadow-sm">
+                      <span>{getMessageTime(msg.createdAt)}</span>
+                      {isMe && (
+                        readCount > 0 
+                          ? <Eye size={10} className="text-white"/> 
+                          : <Check size={10}/>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
-              {msg.text}
+              {/* TEXT CONTENT */}
+              {msg.text && (
+                <div className={`
+                  ${isImage 
+                    ? (isMe ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-200') + ' px-4 py-2 rounded-2xl mt-1 shadow-sm max-w-full' 
+                    : ''
+                  }
+                `}>
+                  {msg.text}
+                  
+                  {/* Timestamp for Text */}
+                  <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-inherit' : 'flex-row text-gray-400'}`}>
+                      <span>{getMessageTime(msg.createdAt)}</span>
+                      {isMe && (
+                          <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
+                              {readCount > 0 ? (
+                                  <>
+                                      <span className={isImage ? "text-inherit" : "text-blue-200 font-bold"}>{readCount > 2 ? `${readCount}` : ''}</span>
+                                      <Eye size={12} className={isImage ? "text-inherit" : "text-blue-200"}/>
+                                  </>
+                              ) : (
+                                  <Check size={12} />
+                              )}
+                          </div>
+                      )}
+                  </div>
+                </div>
+              )}
             </div>
             
-            <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
-                <span>{getMessageTime(msg.createdAt)}</span>
-                {isMe && (
-                    <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
-                        {readCount > 0 ? (
-                            <>
-                                <span className="text-blue-500 font-bold">{readCount > 2 ? `${readCount} read` : readNames}</span>
-                                <Eye size={12} className="text-blue-500"/>
-                            </>
-                        ) : (
-                            <Check size={12} />
-                        )}
-                    </div>
-                )}
-            </div>
+            {/* Timestamp for Plain Text (Non-Image) Messages */}
+            {!isImage && (
+               <div className={`flex items-center gap-1.5 mt-1 text-[10px] opacity-60 font-medium ${isMe ? 'flex-row-reverse text-gray-500' : 'flex-row text-gray-400'}`}>
+                  <span>{getMessageTime(msg.createdAt)}</span>
+                  {isMe && (
+                      <div className="flex items-center gap-1" title={readCount > 0 ? `Read by: ${readNames}` : "Sent"}>
+                          {readCount > 0 ? (
+                              <>
+                                  <span className="text-blue-500 font-bold">{readCount > 2 ? `${readCount} read` : readNames}</span>
+                                  <Eye size={12} className="text-blue-500"/>
+                              </>
+                          ) : (
+                              <Check size={12} />
+                          )}
+                      </div>
+                  )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -236,7 +297,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [imagePreview, setImagePreview] = useState(null); // Image State
+  const [imagePreview, setImagePreview] = useState(null); 
   const [replyingTo, setReplyingTo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -396,19 +457,24 @@ export default function App() {
     typingTimeoutRef.current = setTimeout(() => { deleteDoc(typingDocRef); }, 2000);
   };
 
-  const handleImageSelect = (e) => {
+  const handleImageSelect = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Very basic size check (e.g. 500KB) to prevent huge DB costs
-      if (file.size > 500000) {
-        alert("Image too large! Please choose a smaller image (under 500KB).");
+      if (file.size > 10000000) {
+        alert("Image too large! Max 10MB.");
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressedBase64 = await compressImage(file);
+        if (compressedBase64.length > 1000000) {
+             alert("Image is too complex to send even after compression. Try a smaller one.");
+             return;
+        }
+        setImagePreview(compressedBase64);
+      } catch (error) {
+        console.error("Compression failed:", error);
+        alert("Failed to process image.");
+      }
     }
   };
 
@@ -430,7 +496,7 @@ export default function App() {
         readBy: [],
         replyTo: replyingTo ? {
           id: replyingTo.id,
-          text: replyingTo.text,
+          text: replyingTo.text || (replyingTo.image ? "📷 Photo" : "Message"), // Updated fallback
           displayName: replyingTo.displayName
         } : null
       });
@@ -517,7 +583,6 @@ export default function App() {
             <button type="submit" disabled={!roomInput.trim()} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
               Enter Secret Room <ArrowRight size={18} />
             </button>
-            <p className="text-[10px] text-gray-400">Use <span className="font-mono bg-gray-100 px-1 rounded">brosis123</span> for old history</p>
           </form>
           <div className="mt-6 pt-6 border-t border-gray-100">
             <p className="text-xs text-gray-400 mb-3">OR</p>
@@ -617,7 +682,6 @@ export default function App() {
 
         <div className="p-4">
           <form onSubmit={sendMessage} className="max-w-4xl mx-auto flex gap-3 items-end">
-            {/* FILE INPUT */}
             <input 
               type="file" 
               ref={fileInputRef}
