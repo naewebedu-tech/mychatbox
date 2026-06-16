@@ -499,18 +499,17 @@ export default function App() {
   const vidRef   = useRef(null);
   const inputRef = useRef(null);
   const prevLen  = useRef(0);
+  const lastTypingWrite = useRef(0);
 
   /* ── PATHS ── */
   const getMsgsRef = useCallback((rc = roomCode) => {
-    if (rc === 'brosis123') return collection(db, 'messages');
-    if (rc === 'public')    return collection(db, 'rooms', 'public', 'messages');
-    return collection(db, 'rooms', rc, 'messages');
+    if (rc === 'public') return collection(db, 'rooms', 'public', 'messages');
+    return collection(db, 'messages');
   }, [roomCode]);
 
   const getTypRef = useCallback((rc = roomCode) => {
-    if (rc === 'brosis123') return collection(db, 'typing');
-    if (rc === 'public')    return collection(db, 'rooms', 'public', 'typing');
-    return collection(db, 'rooms', rc, 'typing');
+    if (rc === 'public') return collection(db, 'rooms', 'public', 'typing');
+    return collection(db, 'typing');
   }, [roomCode]);
 
   /* ── INIT ── */
@@ -529,7 +528,13 @@ export default function App() {
     setMessages([]); setTypingUsers([]); prevLen.current = 0;
     const q = query(getMsgsRef(), orderBy('createdAt'));
     const unMsg = onSnapshot(q, snap => {
-      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let loaded = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Filter client-side for private rooms
+      if (roomCode !== 'public') {
+        loaded = loaded.filter(m => m.roomCode === roomCode || (roomCode === 'brosis123' && !m.roomCode));
+      }
+
       if (loaded.length > prevLen.current) {
         const ids = loaded.slice(prevLen.current).map(m => m.id);
         setNewMsgIds(prev => new Set([...prev, ...ids]));
@@ -540,13 +545,27 @@ export default function App() {
       setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 80);
       if (username) snap.docs.forEach(ds => {
         const d = ds.data();
-        if (d.senderName !== username && !d.readBy?.some(r => r.name === username) && !d.deleted)
+        const belongsToRoom = roomCode === 'public'
+          ? d.roomCode === 'public' || !d.roomCode
+          : d.roomCode === roomCode || (roomCode === 'brosis123' && !d.roomCode);
+
+        if (belongsToRoom && d.senderName !== username && !d.readBy?.some(r => r.name === username) && !d.deleted)
           updateDoc(ds.ref, { readBy: arrayUnion({ name: username, readAt: Date.now() }) }).catch(() => {});
       });
     });
     const unTyp = onSnapshot(getTypRef(), snap => {
       const now = Date.now(), active = [];
-      snap.forEach(d => { if (d.id !== username) { const dd = d.data(); if (now - dd.timestamp < 3500) active.push(dd.displayName); } });
+      snap.forEach(d => {
+        if (d.id !== username) {
+          const dd = d.data();
+          const belongsToRoom = roomCode === 'public'
+            ? dd.roomCode === 'public'
+            : dd.roomCode === roomCode || (roomCode === 'brosis123' && !dd.roomCode);
+          if (belongsToRoom && now - dd.timestamp < 3500) {
+            active.push(dd.displayName);
+          }
+        }
+      });
       setTypingUsers(active);
     });
     return () => { unMsg(); unTyp(); };
@@ -610,10 +629,15 @@ export default function App() {
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
     if (!isLoggedIn || !username || !roomCode) return;
-    const ref = doc(getTypRef(), username);
-    setDoc(ref, { displayName: username, timestamp: Date.now() });
-    if (typRef.current) clearTimeout(typRef.current);
-    typRef.current = setTimeout(() => deleteDoc(ref), 2200);
+
+    const now = Date.now();
+    if (now - lastTypingWrite.current > 2000) {
+      lastTypingWrite.current = now;
+      const ref = doc(getTypRef(), username);
+      setDoc(ref, { displayName: username, timestamp: now, roomCode: roomCode }).catch(() => {});
+      if (typRef.current) clearTimeout(typRef.current);
+      typRef.current = setTimeout(() => deleteDoc(ref).catch(() => {}), 2200);
+    }
   };
 
   /* ── MEDIA ── */
@@ -665,6 +689,7 @@ export default function App() {
       senderName: username, displayName: username,
       photoURL: 'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username,
       readBy: [], deleted: false, deletedFor: [], starredBy: [],
+      roomCode: roomCode,
       replyTo: rep ? { id: rep.id, text: rep.text || (rep.image ? '\uD83D\uDCF7 Photo' : rep.video ? '\uD83C\uDFAC Video' : 'Message'), displayName: rep.displayName } : null,
     }).catch(err => {
       console.error("Firestore send error:", err);
@@ -1231,7 +1256,7 @@ export default function App() {
               <Video size={16} style={{ color:th.iconMuted }}/>
             </button>
             <button type="button" onClick={()=>setShowEmoji(v=>!v)} style={{ ...iconBtn(showEmoji), height:40, width:40 }} title="Emoji">
-              <span style={{ fontSize:18, lineHeight:1, fontFamily:'Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif' }}>\uD83D\uDE0A</span>
+              <span style={{ fontSize:18, lineHeight:1, fontFamily:'Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif' }}>😊</span>
             </button>
 
             <div style={{ flex:1, position:'relative' }}>
