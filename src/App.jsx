@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send, Lock, Unlock, User, XCircle, Eye, Reply, X, LogOut, Key,
   Hash, ArrowRight, ShieldCheck, Globe, ArrowLeft, Check, Download,
-  Trash2, Video, Image as ImageIcon, AlertCircle, Sun, Moon, Palette,
-  BookOpen, GraduationCap, Users, MessageSquare, Zap, Star
+  Trash2, Video, Image as ImageIcon, AlertCircle, Copy, Forward,
+  Star, Search, GraduationCap, Users, MessageSquare, Zap, MoreVertical
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, setDoc, getDoc, updateDoc,
-  arrayUnion, deleteDoc, getDocs, doc, query, orderBy, onSnapshot, serverTimestamp
+  arrayUnion, arrayRemove, deleteDoc, getDocs, doc, query,
+  orderBy, onSnapshot, serverTimestamp
 } from 'firebase/firestore';
 
-/* ─────────────── FIREBASE ─────────────── */
+/* ──────────── FIREBASE ──────────── */
 const firebaseConfig = {
   apiKey: 'AIzaSyBsdPXnfvUy78GjvS8Fq6R38iVVhlYuNtI',
   authDomain: 'pvtbox-8f03a.firebaseapp.com',
@@ -25,119 +26,97 @@ const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
-/* ─────────────── THEMES ─────────────── */
+/* ──────────── THEMES ──────────── */
 const THEMES = {
   dark: {
-    name: 'Dark', icon: '🌙',
-    bg: '#0a0a0f',
-    bgGrad: 'radial-gradient(ellipse 80% 60% at 20% 20%,rgba(139,92,246,.13) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(59,130,246,.08) 0%,transparent 60%),#0a0a0f',
-    card: 'rgba(255,255,255,.05)',
-    cardBorder: 'rgba(255,255,255,.1)',
-    header: 'rgba(10,10,15,.92)',
-    footer: 'rgba(10,10,15,.94)',
-    text: '#f1f0ff',
-    textMuted: 'rgba(255,255,255,.4)',
-    accent: '#7c3aed',
-    accentLight: '#a78bfa',
-    accentGrad: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
-    bubbleMe: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
-    bubbleThem: 'rgba(255,255,255,.07)',
-    bubbleThemBorder: 'rgba(255,255,255,.1)',
-    inputBg: 'rgba(255,255,255,.05)',
-    inputBorder: 'rgba(255,255,255,.1)',
-    inputText: '#f1f0ff',
-    placeholder: 'rgba(255,255,255,.3)',
-    iconMuted: 'rgba(255,255,255,.4)',
-    btnGlass: 'rgba(255,255,255,.06)',
-    btnGlassBorder: 'rgba(255,255,255,.09)',
-    divider: 'rgba(255,255,255,.07)',
-    msgGlow: 'rgba(109,40,217,.35)',
+    id:'dark', name:'Dark', icon:'\uD83C\uDF19',
+    bg:'#0d0d14', chatBg:'#0d0d14',
+    bgGrad:'linear-gradient(160deg,#0d0d14 0%,#111128 100%)',
+    card:'rgba(255,255,255,.05)', cardBorder:'rgba(255,255,255,.1)',
+    header:'rgba(13,13,20,.96)', footer:'rgba(13,13,20,.97)',
+    text:'#f1f0ff', textMuted:'rgba(255,255,255,.42)',
+    accent:'#7c3aed', accentLight:'#a78bfa',
+    accentGrad:'linear-gradient(135deg,#7c3aed,#5b21b6)',
+    bubbleMe:'linear-gradient(135deg,#7c3aed,#5b21b6)',
+    bubbleMeText:'#fff',
+    bubbleThem:'rgba(255,255,255,.07)', bubbleThemBorder:'rgba(255,255,255,.1)',
+    bubbleThemText:'#f1f0ff',
+    inputBg:'rgba(255,255,255,.06)', inputBorder:'rgba(255,255,255,.12)',
+    inputText:'#f1f0ff', placeholder:'rgba(255,255,255,.3)',
+    iconMuted:'rgba(255,255,255,.4)',
+    glass:'rgba(255,255,255,.07)', glassBorder:'rgba(255,255,255,.1)',
+    divider:'rgba(255,255,255,.07)',
+    glow:'rgba(124,58,237,.35)', dateBg:'rgba(255,255,255,.08)',
+    dateText:'rgba(255,255,255,.5)', starColor:'#fbbf24',
   },
   light: {
-    name: 'Light', icon: '☀️',
-    bg: '#f8f7ff',
-    bgGrad: 'radial-gradient(ellipse 80% 60% at 20% 20%,rgba(139,92,246,.06) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(59,130,246,.04) 0%,transparent 60%),#f8f7ff',
-    card: 'rgba(255,255,255,.9)',
-    cardBorder: 'rgba(0,0,0,.1)',
-    header: 'rgba(255,255,255,.95)',
-    footer: 'rgba(255,255,255,.97)',
-    text: '#1a1033',
-    textMuted: 'rgba(0,0,0,.45)',
-    accent: '#7c3aed',
-    accentLight: '#6d28d9',
-    accentGrad: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
-    bubbleMe: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
-    bubbleThem: '#f0eeff',
-    bubbleThemBorder: 'rgba(109,40,217,.15)',
-    inputBg: 'rgba(0,0,0,.04)',
-    inputBorder: 'rgba(0,0,0,.12)',
-    inputText: '#1a1033',
-    placeholder: 'rgba(0,0,0,.35)',
-    iconMuted: 'rgba(0,0,0,.4)',
-    btnGlass: 'rgba(0,0,0,.04)',
-    btnGlassBorder: 'rgba(0,0,0,.1)',
-    divider: 'rgba(0,0,0,.08)',
-    msgGlow: 'rgba(109,40,217,.2)',
+    id:'light', name:'Light', icon:'\u2600\uFE0F',
+    bg:'#f0f2f5', chatBg:'#e5ddd5',
+    bgGrad:'linear-gradient(160deg,#f0f2f5 0%,#e8eaf0 100%)',
+    card:'#fff', cardBorder:'rgba(0,0,0,.1)',
+    header:'rgba(255,255,255,.97)', footer:'rgba(255,255,255,.97)',
+    text:'#111b21', textMuted:'rgba(0,0,0,.5)',
+    accent:'#075e54', accentLight:'#128c7e',
+    accentGrad:'linear-gradient(135deg,#075e54,#128c7e)',
+    bubbleMe:'#dcf8c6', bubbleMeText:'#111b21',
+    bubbleThem:'#ffffff', bubbleThemBorder:'rgba(0,0,0,.08)',
+    bubbleThemText:'#111b21',
+    inputBg:'rgba(0,0,0,.04)', inputBorder:'rgba(0,0,0,.12)',
+    inputText:'#111b21', placeholder:'rgba(0,0,0,.38)',
+    iconMuted:'rgba(0,0,0,.45)',
+    glass:'rgba(0,0,0,.04)', glassBorder:'rgba(0,0,0,.1)',
+    divider:'rgba(0,0,0,.08)',
+    glow:'rgba(7,94,84,.2)', dateBg:'rgba(255,255,255,.8)',
+    dateText:'rgba(0,0,0,.55)', starColor:'#f59e0b',
   },
   ocean: {
-    name: 'Ocean', icon: '🌊',
-    bg: '#030d1a',
-    bgGrad: 'radial-gradient(ellipse 80% 60% at 20% 20%,rgba(6,182,212,.12) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(59,130,246,.1) 0%,transparent 60%),#030d1a',
-    card: 'rgba(6,182,212,.06)',
-    cardBorder: 'rgba(6,182,212,.2)',
-    header: 'rgba(3,13,26,.92)',
-    footer: 'rgba(3,13,26,.94)',
-    text: '#e0f7fa',
-    textMuted: 'rgba(224,247,250,.4)',
-    accent: '#0891b2',
-    accentLight: '#22d3ee',
-    accentGrad: 'linear-gradient(135deg,#0891b2,#0e7490)',
-    bubbleMe: 'linear-gradient(135deg,#0891b2,#0e7490)',
-    bubbleThem: 'rgba(6,182,212,.1)',
-    bubbleThemBorder: 'rgba(6,182,212,.2)',
-    inputBg: 'rgba(6,182,212,.06)',
-    inputBorder: 'rgba(6,182,212,.2)',
-    inputText: '#e0f7fa',
-    placeholder: 'rgba(224,247,250,.3)',
-    iconMuted: 'rgba(224,247,250,.4)',
-    btnGlass: 'rgba(6,182,212,.08)',
-    btnGlassBorder: 'rgba(6,182,212,.18)',
-    divider: 'rgba(6,182,212,.1)',
-    msgGlow: 'rgba(8,145,178,.3)',
+    id:'ocean', name:'Ocean', icon:'\uD83C\uDF0A',
+    bg:'#020b14', chatBg:'#020b14',
+    bgGrad:'linear-gradient(160deg,#020b14 0%,#041824 100%)',
+    card:'rgba(6,182,212,.07)', cardBorder:'rgba(6,182,212,.22)',
+    header:'rgba(2,11,20,.96)', footer:'rgba(2,11,20,.97)',
+    text:'#cffafe', textMuted:'rgba(207,250,254,.42)',
+    accent:'#0891b2', accentLight:'#22d3ee',
+    accentGrad:'linear-gradient(135deg,#0e7490,#0891b2)',
+    bubbleMe:'linear-gradient(135deg,#0e7490,#0891b2)',
+    bubbleMeText:'#fff',
+    bubbleThem:'rgba(6,182,212,.1)', bubbleThemBorder:'rgba(6,182,212,.22)',
+    bubbleThemText:'#cffafe',
+    inputBg:'rgba(6,182,212,.07)', inputBorder:'rgba(6,182,212,.22)',
+    inputText:'#cffafe', placeholder:'rgba(207,250,254,.32)',
+    iconMuted:'rgba(207,250,254,.45)',
+    glass:'rgba(6,182,212,.09)', glassBorder:'rgba(6,182,212,.2)',
+    divider:'rgba(6,182,212,.12)',
+    glow:'rgba(8,145,178,.35)', dateBg:'rgba(6,182,212,.15)',
+    dateText:'rgba(207,250,254,.6)', starColor:'#fbbf24',
   },
   forest: {
-    name: 'Forest', icon: '🌿',
-    bg: '#030f08',
-    bgGrad: 'radial-gradient(ellipse 80% 60% at 20% 20%,rgba(34,197,94,.1) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(16,185,129,.07) 0%,transparent 60%),#030f08',
-    card: 'rgba(34,197,94,.05)',
-    cardBorder: 'rgba(34,197,94,.18)',
-    header: 'rgba(3,15,8,.92)',
-    footer: 'rgba(3,15,8,.94)',
-    text: '#dcfce7',
-    textMuted: 'rgba(220,252,231,.4)',
-    accent: '#16a34a',
-    accentLight: '#4ade80',
-    accentGrad: 'linear-gradient(135deg,#16a34a,#15803d)',
-    bubbleMe: 'linear-gradient(135deg,#16a34a,#15803d)',
-    bubbleThem: 'rgba(34,197,94,.09)',
-    bubbleThemBorder: 'rgba(34,197,94,.18)',
-    inputBg: 'rgba(34,197,94,.05)',
-    inputBorder: 'rgba(34,197,94,.18)',
-    inputText: '#dcfce7',
-    placeholder: 'rgba(220,252,231,.3)',
-    iconMuted: 'rgba(220,252,231,.4)',
-    btnGlass: 'rgba(34,197,94,.07)',
-    btnGlassBorder: 'rgba(34,197,94,.16)',
-    divider: 'rgba(34,197,94,.1)',
-    msgGlow: 'rgba(22,163,74,.3)',
+    id:'forest', name:'Forest', icon:'\uD83C\uDF3F',
+    bg:'#040f08', chatBg:'#040f08',
+    bgGrad:'linear-gradient(160deg,#040f08 0%,#071810 100%)',
+    card:'rgba(34,197,94,.06)', cardBorder:'rgba(34,197,94,.2)',
+    header:'rgba(4,15,8,.96)', footer:'rgba(4,15,8,.97)',
+    text:'#dcfce7', textMuted:'rgba(220,252,231,.42)',
+    accent:'#16a34a', accentLight:'#4ade80',
+    accentGrad:'linear-gradient(135deg,#15803d,#16a34a)',
+    bubbleMe:'linear-gradient(135deg,#15803d,#16a34a)',
+    bubbleMeText:'#fff',
+    bubbleThem:'rgba(34,197,94,.09)', bubbleThemBorder:'rgba(34,197,94,.2)',
+    bubbleThemText:'#dcfce7',
+    inputBg:'rgba(34,197,94,.06)', inputBorder:'rgba(34,197,94,.2)',
+    inputText:'#dcfce7', placeholder:'rgba(220,252,231,.32)',
+    iconMuted:'rgba(220,252,231,.45)',
+    glass:'rgba(34,197,94,.08)', glassBorder:'rgba(34,197,94,.18)',
+    divider:'rgba(34,197,94,.12)',
+    glow:'rgba(22,163,74,.35)', dateBg:'rgba(34,197,94,.15)',
+    dateText:'rgba(220,252,231,.6)', starColor:'#fbbf24',
   },
 };
 
-/* ─────────────── HELPERS ─────────────── */
-const NAME_COLORS = ['#f87171','#fb923c','#fbbf24','#34d399','#22d3ee','#60a5fa','#a78bfa','#f472b6','#818cf8'];
+/* ──────────── HELPERS ──────────── */
+const NAME_COLORS = ['#f87171','#fb923c','#fbbf24','#34d399','#22d3ee','#60a5fa','#a78bfa','#f472b6'];
 const getNameColor = (name) => {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return NAME_COLORS[Math.abs(h) % NAME_COLORS.length];
 };
 
@@ -149,496 +128,920 @@ const compressImage = (file) => new Promise((resolve) => {
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const MAX = 900; let w = img.width, h = img.height;
-      if (w > h) { if (w > MAX) { h *= MAX/w; w = MAX; } } else { if (h > MAX) { w *= MAX/h; h = MAX; } }
+      if (w > h) { if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; } }
+      else { if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; } }
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.75));
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
     };
   };
 });
 
-const downloadFile = (src, name) => { const a = document.createElement('a'); a.href = src; a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
+const dlFile = (src, name) => {
+  const a = document.createElement('a'); a.href = src; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
 
-const EMOJIS = ['😀','😂','🥰','😍','🤩','😎','🥳','🤔','😮','😢','😡','🥺','👍','👎','❤️','🔥','✨','🎉','💯','😭','🙏','💪','👀','🤣','😅','🫡','💀','🤝','🫶','✅'];
+const getDateLabel = (ts) => {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((today - msgDay) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { day:'numeric', month:'short', year:'numeric' });
+};
 
-/* ─────────────── MINI COMPONENTS ─────────────── */
+const getTime = (ts) => {
+  if (!ts) return '...';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+};
+
+// Universally-supported emojis (hardcoded safe set)
+const EMOJIS = ["😀","😂","😍","😘","😎","😢","😡","😮","😕","😣","👍","👎","❤️","🔥","✨","🎉","💯","🙏","💪","👀","🤣","😅","🙌","🌟","💛","💚","💜","💙","🎵","✅"];
+
+/* ──────────── SMALL COMPONENTS ──────────── */
+
+const Spinner = ({ size = 16, color = '#fff' }) => (
+  <span style={{ width: size, height: size, border: `2px solid ${color}30`, borderTopColor: color, borderRadius: '50%', display: 'inline-block', animation: 'waSpin 0.7s linear infinite', flexShrink: 0 }}/>
+);
+
+const DoubleCheck = ({ reads, accentLight, isLight }) => {
+  const color = reads > 0 ? '#53bdeb' : (isLight ? 'rgba(0,0,0,.35)' : 'rgba(255,255,255,.5)');
+  return (
+    <span style={{ display:'flex', alignItems:'center', gap:0, flexShrink:0 }}>
+      <Check size={11} style={{ color, strokeWidth:3 }}/>
+      <Check size={11} style={{ color, strokeWidth:3, marginLeft:-6 }}/>
+    </span>
+  );
+};
+
+const Toast = ({ message, type = 'info', onClose }) => {
+  useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
+  const clr = { success:'#22c55e', error:'#ef4444', info:'#60a5fa', warning:'#fbbf24' };
+  return (
+    <div style={{ position:'fixed', bottom:80, left:'50%', transform:'translateX(-50%)', zIndex:500,
+      display:'flex', alignItems:'center', gap:8, padding:'9px 16px', borderRadius:24,
+      fontSize:13, fontWeight:600, color:'#fff', background:'rgba(30,30,40,.97)',
+      backdropFilter:'blur(20px)', border:`1px solid ${clr[type]}40`,
+      boxShadow:'0 8px 32px rgba(0,0,0,.5)', animation:'waFadeUp .25s ease', whiteSpace:'nowrap' }}>
+      <span style={{ width:7, height:7, borderRadius:'50%', background:clr[type], display:'inline-block', flexShrink:0 }}/>
+      {message}
+    </div>
+  );
+};
 
 const EmojiPicker = ({ onSelect, onClose, th }) => (
-  <div style={{ position:'absolute',bottom:'calc(100% + 10px)',left:0,width:288,background:th.card,backdropFilter:'blur(40px)',border:`1px solid ${th.cardBorder}`,borderRadius:18,padding:14,zIndex:60,display:'flex',flexWrap:'wrap',gap:4,boxShadow:'0 24px 64px rgba(0,0,0,.7)',animation:'fadeScale .22s cubic-bezier(.34,1.56,.64,1) forwards' }}>
-    {EMOJIS.map(e => (
-      <button key={e} onClick={() => { onSelect(e); onClose(); }}
-        style={{ width:36,height:36,fontSize:20,border:'none',borderRadius:9,cursor:'pointer',background:'transparent',transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'center' }}
-        onMouseEnter={ev => { ev.currentTarget.style.background=th.btnGlass; ev.currentTarget.style.transform='scale(1.2)'; }}
+  <div onClick={e => e.stopPropagation()} style={{
+    position:'absolute', bottom:'calc(100% + 8px)', left:0,
+    background: th.id === 'light' ? '#fff' : 'rgba(20,20,32,.98)',
+    backdropFilter:'blur(30px)', border:`1px solid ${th.cardBorder}`,
+    borderRadius:16, padding:10, zIndex:100, display:'flex', flexWrap:'wrap',
+    gap:3, width:272, boxShadow:'0 20px 60px rgba(0,0,0,.5)',
+    animation:'waFadeUp .18s ease'
+  }}>
+    {EMOJIS.map((e, i) => (
+      <button key={i} onClick={() => { onSelect(e); onClose(); }}
+        title={e}
+        style={{ width:36, height:36, fontSize:22, border:'none', borderRadius:8, cursor:'pointer',
+          background:'transparent', display:'flex', alignItems:'center', justifyContent:'center',
+          transition:'transform .12s, background .12s', flexShrink:0, fontFamily:'Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif' }}
+        onMouseEnter={ev => { ev.currentTarget.style.background=th.glass; ev.currentTarget.style.transform='scale(1.25)'; }}
         onMouseLeave={ev => { ev.currentTarget.style.background='transparent'; ev.currentTarget.style.transform='scale(1)'; }}
       >{e}</button>
     ))}
   </div>
 );
 
-const Toast = ({ message, type = 'success', onClose }) => {
-  useEffect(() => { const t = setTimeout(onClose, 3200); return () => clearTimeout(t); }, []);
-  const clr = { success:'#22c55e', error:'#ef4444', info:'#a78bfa', warning:'#fbbf24' };
-  return (
-    <div style={{ position:'fixed',bottom:88,left:'50%',transform:'translateX(-50%)',zIndex:300,display:'flex',alignItems:'center',gap:9,padding:'9px 18px',borderRadius:13,fontSize:13,fontWeight:600,color:'#fff',background:'rgba(12,12,22,.97)',backdropFilter:'blur(20px)',border:`1px solid ${clr[type]}50`,boxShadow:'0 8px 32px rgba(0,0,0,.5)',animation:'fadeScale .25s ease forwards',whiteSpace:'nowrap' }}>
-      <span style={{ color:clr[type],fontSize:9 }}>⬤</span>{message}
-    </div>
-  );
-};
-
 const ThemePicker = ({ current, onChange, onClose, th }) => (
-  <div style={{ position:'fixed',top:60,right:12,zIndex:200,background:th.card,backdropFilter:'blur(40px)',border:`1px solid ${th.cardBorder}`,borderRadius:16,padding:10,boxShadow:'0 20px 60px rgba(0,0,0,.6)',animation:'fadeScale .2s ease forwards',minWidth:160 }}>
-    <p style={{ color:th.textMuted,fontSize:10,fontWeight:700,margin:'0 4px 8px',letterSpacing:.5 }}>THEME</p>
-    {Object.entries(THEMES).map(([key, t]) => (
-      <button key={key} onClick={() => { onChange(key); onClose(); }}
-        style={{ display:'flex',alignItems:'center',gap:9,width:'100%',padding:'8px 10px',borderRadius:10,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',transition:'all .15s',background: current===key ? th.accentGrad : 'transparent',color: current===key ? '#fff' : th.text }}
-        onMouseEnter={ev => { if(current!==key) ev.currentTarget.style.background=th.btnGlass; }}
-        onMouseLeave={ev => { if(current!==key) ev.currentTarget.style.background='transparent'; }}
+  <div style={{ position:'fixed', top:56, right:12, zIndex:300,
+    background: th.id === 'light' ? '#fff' : 'rgba(20,20,32,.98)',
+    backdropFilter:'blur(30px)', border:`1px solid ${th.cardBorder}`,
+    borderRadius:14, padding:8, minWidth:150, boxShadow:'0 16px 48px rgba(0,0,0,.5)',
+    animation:'waFadeUp .18s ease' }}>
+    <p style={{ color:th.textMuted, fontSize:10, fontWeight:700, margin:'0 8px 6px', letterSpacing:.6 }}>THEME</p>
+    {Object.values(THEMES).map(t => (
+      <button key={t.id} onClick={() => { onChange(t.id); onClose(); }}
+        style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:'8px 10px',
+          borderRadius:9, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
+          fontFamily:'inherit', transition:'all .13s',
+          background: current===t.id ? th.accentGrad : 'transparent',
+          color: current===t.id ? '#fff' : th.text }}
+        onMouseEnter={ev => { if(current!==t.id) ev.currentTarget.style.background=th.glass; }}
+        onMouseLeave={ev => { if(current!==t.id) ev.currentTarget.style.background='transparent'; }}
       >
-        <span style={{ fontSize:16 }}>{t.icon}</span>{t.name}
-        {current===key && <span style={{ marginLeft:'auto',fontSize:10 }}>✓</span>}
+        <span style={{ fontSize:17 }}>{t.icon}</span>{t.name}
+        {current===t.id && <Check size={13} style={{ marginLeft:'auto' }}/>}
       </button>
     ))}
   </div>
 );
 
 const ImageViewer = ({ src, onClose }) => (
-  <div onClick={onClose} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,.92)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeScale .2s ease' }}>
-    <button onClick={onClose} style={{ position:'absolute',top:16,right:16,background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',borderRadius:'50%',width:40,height:40,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#fff' }}><X size={18}/></button>
-    <button onClick={e=>{ e.stopPropagation(); downloadFile(src,'chat-image.jpg'); }} style={{ position:'absolute',top:16,right:64,background:'rgba(139,92,246,.3)',border:'1px solid rgba(139,92,246,.5)',borderRadius:'50%',width:40,height:40,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#a78bfa' }} title="Download"><Download size={18}/></button>
-    <img src={src} alt="full" onClick={e=>e.stopPropagation()} style={{ maxWidth:'92vw',maxHeight:'88vh',objectFit:'contain',borderRadius:12,boxShadow:'0 32px 80px rgba(0,0,0,.8)' }}/>
+  <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.93)', zIndex:600,
+    display:'flex', alignItems:'center', justifyContent:'center', animation:'waFadeUp .18s ease' }}>
+    <div style={{ position:'absolute', top:14, right:14, display:'flex', gap:10 }}>
+      <button onClick={e=>{e.stopPropagation();dlFile(src,'image.jpg');}}
+        style={{ width:40,height:40,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.2)',cursor:'pointer',color:'#fff' }}>
+        <Download size={17}/>
+      </button>
+      <button onClick={onClose}
+        style={{ width:40,height:40,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.2)',cursor:'pointer',color:'#fff' }}>
+        <X size={17}/>
+      </button>
+    </div>
+    <img src={src} alt="full" onClick={e=>e.stopPropagation()}
+      style={{ maxWidth:'90vw', maxHeight:'86vh', objectFit:'contain', borderRadius:10, boxShadow:'0 24px 80px rgba(0,0,0,.8)' }}/>
   </div>
 );
 
-const ContextMenu = ({ x, y, items, onClose, th }) => {
-  useEffect(() => { const h = () => onClose(); document.addEventListener('click',h); return () => document.removeEventListener('click',h); }, []);
+const CtxMenu = ({ x, y, items, onClose, th }) => {
+  useEffect(() => {
+    const h = () => onClose(); document.addEventListener('mousedown', h, true);
+    return () => document.removeEventListener('mousedown', h, true);
+  }, []);
+  const vpW = window.innerWidth, vpH = window.innerHeight;
+  const mx = Math.min(x, vpW-190); const my = Math.min(y, vpH-items.filter(Boolean).length*40-20);
   return (
-    <div style={{ position:'fixed',top:y,left:x,zIndex:250,background:th.header,backdropFilter:'blur(30px)',border:`1px solid ${th.cardBorder}`,borderRadius:14,padding:6,minWidth:168,boxShadow:'0 16px 48px rgba(0,0,0,.6)',animation:'fadeScale .18s ease forwards' }}>
-      {items.map((item,i) => item ? (
-        <button key={i} onClick={()=>{ item.action(); onClose(); }}
-          style={{ display:'flex',alignItems:'center',gap:9,width:'100%',padding:'9px 12px',borderRadius:9,border:'none',cursor:'pointer',fontSize:13,fontWeight:600,background:'transparent',color:item.danger?'#f87171':th.text,fontFamily:'inherit',transition:'all .15s' }}
-          onMouseEnter={ev=>ev.currentTarget.style.background=item.danger?'rgba(239,68,68,.15)':th.btnGlass}
-          onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}
+    <div style={{ position:'fixed', top:my, left:mx, zIndex:400, borderRadius:14, overflow:'hidden',
+      background: th.id==='light' ? '#fff' : 'rgba(22,22,35,.98)',
+      backdropFilter:'blur(30px)', border:`1px solid ${th.cardBorder}`,
+      boxShadow:'0 12px 40px rgba(0,0,0,.55)', animation:'waFadeUp .15s ease', minWidth:180 }}>
+      {items.map((item, i) => item ? (
+        <button key={i} onClick={() => { item.action(); onClose(); }}
+          style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'11px 14px',
+            border:'none', cursor:'pointer', fontSize:13, fontWeight:500, background:'transparent',
+            color: item.danger ? '#ef4444' : th.text, fontFamily:'inherit', transition:'background .12s',
+            borderBottom: i < items.filter(Boolean).length-1 ? `1px solid ${th.divider}` : 'none' }}
+          onMouseEnter={ev => ev.currentTarget.style.background=th.glass}
+          onMouseLeave={ev => ev.currentTarget.style.background='transparent'}
         >{item.icon}<span>{item.label}</span></button>
-      ) : (
-        <div key={i} style={{ height:1,background:th.divider,margin:'4px 8px' }}/>
-      ))}
+      ) : null)}
     </div>
   );
 };
 
-/* ─────────────── MESSAGE BUBBLE ─────────────── */
-const MessageBubble = ({ msg, isMe, username, isAdmin, onDelete, onSoftDelete, onReply, getMessageTime, isNew, th }) => {
-  const [sx,setSx]=useState(0); const [cx,setCx]=useState(0); const [sw,setSw]=useState(false);
-  const [ctx,setCtx]=useState(null); const [imgView,setImgView]=useState(false);
+/* ──────────── DATE SEPARATOR ──────────── */
+const DateSep = ({ label, th }) => (
+  <div style={{ display:'flex', justifyContent:'center', margin:'6px 0' }}>
+    <span style={{ padding:'4px 12px', borderRadius:20, fontSize:11, fontWeight:600,
+      background:th.dateBg, color:th.dateText }}>{label}</span>
+  </div>
+);
+
+/* ──────────── MESSAGE BUBBLE ──────────── */
+const MsgBubble = React.memo(({ msg, isMe, username, isAdmin, onDelete, onSoftDelete, onReply, isNew, th, onStar, onCopy }) => {
+  const [imgView, setImgView] = useState(false);
+  const [ctx, setCtx] = useState(null);
   const reads = msg.readBy ? msg.readBy.length : 0;
   const isImg = !!msg.image; const isVid = !!msg.video;
   const deleted = !!msg.deleted;
-  const deletedForMe = msg.deletedFor?.includes(username);
-  const hStart=(x)=>{setSx(x);setSw(true);}; const hMove=(x)=>{if(!sw)return;const d=x-sx;if(d>0&&d<100)setCx(d);}; const hEnd=()=>{setSw(false);if(cx>55)onReply(msg);setCx(0);};
-  const handleCtx=(e)=>{ e.preventDefault(); e.stopPropagation(); let x=e.clientX,y=e.clientY; if(x+180>window.innerWidth)x=window.innerWidth-185; if(y+200>window.innerHeight)y=window.innerHeight-210; setCtx({x,y}); };
-  const bubbleMe={background:th.bubbleMe,boxShadow:`0 4px 20px ${th.msgGlow}`};
-  const bubbleThem={background:th.bubbleThem,border:`1px solid ${th.bubbleThemBorder}`};
-  if(deletedForMe) return null;
-  if(deleted) return (
-    <div style={{ display:'flex',justifyContent:isMe?'flex-end':'flex-start' }}>
-      <div style={{ display:'flex',alignItems:'center',gap:7,padding:'7px 14px',borderRadius:14,background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}`,maxWidth:'72%' }}>
-        <AlertCircle size={13} style={{ color:th.textMuted,flexShrink:0 }}/>
-        <span style={{ fontSize:13,fontStyle:'italic',color:th.textMuted }}>{isMe?'You deleted this message':'This message was deleted'}</span>
+  const deletedForMe = Array.isArray(msg.deletedFor) && msg.deletedFor.includes(username);
+  const starred = Array.isArray(msg.starredBy) && msg.starredBy.includes(username);
+  const isLight = th.id === 'light';
+
+  const openCtx = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setCtx({ x: e.clientX, y: e.clientY });
+  };
+
+  if (deletedForMe) return null;
+
+  if (deleted) return (
+    <div style={{ display:'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', padding:'0 8px' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 13px',
+        borderRadius:12, maxWidth:'72%',
+        background: isMe ? (isLight?'#dcf8c6':'rgba(124,58,237,.15)') : (isLight?'#fff':th.bubbleThem),
+        border:`1px solid ${th.bubbleThemBorder}` }}>
+        <AlertCircle size={13} style={{ color:th.textMuted, flexShrink:0 }}/>
+        <span style={{ fontSize:13, fontStyle:'italic', color:th.textMuted }}>
+          {isMe ? 'You deleted this message' : 'This message was deleted'}
+        </span>
       </div>
     </div>
   );
-  const menuItems=[
-    {icon:<Reply size={14}/>,label:'Reply',action:()=>onReply(msg)},
-    isImg?{icon:<Download size={14}/>,label:'Download Image',action:()=>downloadFile(msg.image,'chat-image.jpg')}:null,
-    isVid?{icon:<Download size={14}/>,label:'Download Video',action:()=>downloadFile(msg.video,'chat-video.mp4')}:null,
+
+  const menuItems = [
+    { icon:<Reply size={14}/>, label:'Reply', action:()=>onReply(msg) },
+    msg.text ? { icon:<Copy size={14}/>, label:'Copy Text', action:()=>{ navigator.clipboard?.writeText(msg.text); } } : null,
+    { icon:<Star size={14}/>, label: starred?'Unstar':'Star Message', action:()=>onStar(msg.id, starred) },
+    (isImg||isVid) ? { icon:<Download size={14}/>, label:'Download', action:()=>isImg?dlFile(msg.image,'image.jpg'):dlFile(msg.video,'video.mp4') } : null,
     null,
-    isMe?{icon:<Trash2 size={14}/>,label:'Delete for Me',danger:false,action:()=>onSoftDelete(msg.id,'forMe')}:null,
-    isMe?{icon:<Trash2 size={14}/>,label:'Delete for Everyone',danger:true,action:()=>onSoftDelete(msg.id,'forAll')}:null,
-    isAdmin&&!isMe?{icon:<XCircle size={14}/>,label:'Admin Delete',danger:true,action:()=>onDelete(msg.id)}:null,
+    isMe ? { icon:<Trash2 size={14}/>, label:'Delete for Me', danger:false, action:()=>onSoftDelete(msg.id,'forMe') } : null,
+    isMe ? { icon:<Trash2 size={14}/>, label:'Delete for Everyone', danger:true, action:()=>onSoftDelete(msg.id,'forAll') } : null,
+    isAdmin&&!isMe ? { icon:<XCircle size={14}/>, label:'Remove (Admin)', danger:true, action:()=>onDelete(msg.id) } : null,
   ].filter(Boolean);
 
+  const bubbleBg = isMe
+    ? (isLight ? th.bubbleMe : th.bubbleMe)
+    : (isLight ? th.bubbleThem : th.bubbleThem);
+
+  const bubbleStyle = {
+    maxWidth:'75%', wordBreak:'break-word', lineHeight:1.55,
+    borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+    overflow:'hidden', position:'relative',
+    boxShadow: isMe && !isLight ? `0 2px 12px ${th.glow}` : '0 1px 2px rgba(0,0,0,.13)',
+    ...(isImg||isVid ? {} : {
+      background: isMe ? (isLight?th.bubbleMe:undefined) : bubbleBg,
+      backgroundImage: isMe && !isLight ? th.bubbleMe : undefined,
+      border: !isMe ? `1px solid ${th.bubbleThemBorder}` : 'none',
+      padding:'8px 12px',
+    })
+  };
+
+  const textColor = isMe ? th.bubbleMeText : th.bubbleThemText;
+
   return (
-    <div className={isNew?'animate-msg-in':''} style={{ display:'flex',width:'100%',justifyContent:isMe?'flex-end':'flex-start',position:'relative',userSelect:'none' }}
-      onTouchStart={e=>hStart(e.targetTouches[0].clientX)} onTouchMove={e=>hMove(e.targetTouches[0].clientX)} onTouchEnd={hEnd}
-      onMouseDown={e=>hStart(e.clientX)} onMouseMove={e=>{if(e.buttons===1)hMove(e.clientX);}} onMouseUp={hEnd}
-      onMouseLeave={()=>{setSw(false);setCx(0);}} onContextMenu={handleCtx}
+    <div className={isNew ? 'wa-msg-in' : ''}
+      style={{ display:'flex', flexDirection:'column', alignItems: isMe?'flex-end':'flex-start', padding:'1px 8px', position:'relative' }}
+      onContextMenu={openCtx}
     >
-      <div style={{ position:'absolute',left:8,top:'50%',transform:`translateY(-50%) scale(${cx>50?1.2:.85})`,opacity:cx>20?1:0,transition:'all .2s',pointerEvents:'none' }}>
-        <div style={{ padding:6,borderRadius:'50%',background:`${th.accent}30`,border:`1px solid ${th.accent}60`,display:'flex' }}><Reply size={14} style={{ color:th.accentLight }}/></div>
-      </div>
-      <div style={{ display:'flex',flexDirection:'column',alignItems:isMe?'flex-end':'flex-start',maxWidth:'82%',transform:`translateX(${cx}px)`,transition:'transform .2s ease' }}>
-        {!isMe&&<span style={{ fontSize:11,fontWeight:700,marginLeft:40,marginBottom:3,color:getNameColor(msg.displayName||'User') }}>{msg.displayName||'Anonymous'}</span>}
-        <div style={{ display:'flex',alignItems:'flex-end',gap:8,flexDirection:isMe?'row-reverse':'row' }}>
-          <img src={msg.photoURL} alt="av" style={{ width:30,height:30,borderRadius:'50%',objectFit:'cover',marginBottom:4,flexShrink:0,boxShadow:`0 0 0 2px ${th.accent}60` }}/>
-          <div onContextMenu={handleCtx} style={{ fontSize:14,lineHeight:1.6,wordBreak:'break-word',position:'relative',cursor:'context-menu',...(isImg||isVid?{}:{...(isMe?bubbleMe:bubbleThem),padding:'9px 14px',borderRadius:18,borderBottomRightRadius:isMe?4:18,borderBottomLeftRadius:isMe?18:4}) }}>
-            {msg.replyTo&&<div style={{ marginBottom:8,padding:'5px 10px',borderLeft:`3px solid ${th.accent}`,background:`${th.accent}15`,borderRadius:'0 8px 8px 0',fontSize:12 }}><p style={{ fontWeight:700,color:th.accentLight,margin:0,marginBottom:2 }}>{msg.replyTo.displayName}</p><p style={{ opacity:.6,margin:0,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical' }}>{msg.replyTo.text||'📷 Media'}</p></div>}
-            {isImg&&(
-              <div style={{ borderRadius:16,overflow:'hidden',position:'relative',cursor:'pointer' }} onClick={()=>setImgView(true)}>
-                <img src={msg.image} alt="shared" style={{ maxHeight:280,width:'100%',objectFit:'cover',display:'block' }}/>
-                <button onClick={e=>{e.stopPropagation();downloadFile(msg.image,'chat-image.jpg');}} style={{ position:'absolute',top:8,right:8,background:'rgba(0,0,0,.55)',backdropFilter:'blur(8px)',border:'none',borderRadius:8,padding:'5px 7px',cursor:'pointer',color:'#fff',display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600 }}><Download size={12}/> Save</button>
-                {!msg.text&&<div style={{ position:'absolute',bottom:8,right:8,display:'flex',alignItems:'center',gap:4,padding:'2px 8px',borderRadius:20,background:'rgba(0,0,0,.5)',backdropFilter:'blur(8px)',fontSize:10,color:'#fff',fontWeight:500 }}>{getMessageTime(msg.createdAt)}{isMe&&(reads>0?<Eye size={10}/>:<Check size={10}/>)}</div>}
-              </div>
-            )}
-            {isVid&&(
-              <div style={{ borderRadius:16,overflow:'hidden',position:'relative',maxWidth:300 }}>
-                <video src={msg.video} controls style={{ width:'100%',maxHeight:260,borderRadius:16,display:'block',background:'#000' }}/>
-                <button onClick={()=>downloadFile(msg.video,'chat-video.mp4')} style={{ position:'absolute',top:8,right:8,background:'rgba(0,0,0,.55)',backdropFilter:'blur(8px)',border:'none',borderRadius:8,padding:'5px 7px',cursor:'pointer',color:'#fff',display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600 }}><Download size={12}/> Save</button>
-              </div>
-            )}
-            {msg.text&&(
-              <div style={{ ...(isImg||isVid?{...(isMe?bubbleMe:bubbleThem),padding:'8px 14px',borderRadius:13,marginTop:5,wordBreak:'break-word'}:{}) }}>
-                <span style={{ color:isMe?'#fff':th.text }}>{msg.text}</span>
-                <div style={{ display:'flex',alignItems:'center',gap:4,marginTop:4,fontSize:10,opacity:.5,justifyContent:isMe?'flex-end':'flex-start',color:isMe?th.accentLight:th.textMuted }}>{getMessageTime(msg.createdAt)}{isMe&&(reads>0?<><Eye size={11} style={{ color:th.accentLight }}/>{reads>1&&<span style={{ color:th.accentLight }}>{reads}</span>}</>:<Check size={11}/>)}</div>
-              </div>
-            )}
-          </div>
+      {!isMe && (
+        <span style={{ fontSize:11, fontWeight:700, marginLeft:10, marginBottom:3, color:getNameColor(msg.displayName||'User') }}>
+          {msg.displayName||'Anonymous'}
+        </span>
+      )}
+
+      <div style={{ display:'flex', alignItems:'flex-end', gap:6, flexDirection:isMe?'row-reverse':'row', maxWidth:'88%' }}>
+        {/* Avatar */}
+        <img src={msg.photoURL||'https://api.dicebear.com/9.x/avataaars/svg?seed=user'} alt="av"
+          style={{ width:28,height:28,borderRadius:'50%',objectFit:'cover',flexShrink:0,marginBottom:4,
+            boxShadow:`0 0 0 2px ${th.accent}50`, display: isMe?'none':'block' }}/>
+
+        <div style={bubbleStyle}>
+          {/* Star indicator */}
+          {starred && (
+            <div style={{ position:'absolute', top:5, left: isMe?5:undefined, right: isMe?undefined:5, opacity:.8 }}>
+              <Star size={9} style={{ color:th.starColor, fill:th.starColor }}/>
+            </div>
+          )}
+
+          {/* Reply Quote */}
+          {msg.replyTo && (
+            <div style={{ margin:isImg||isVid?'8px 8px 4px':'0 0 6px',
+              padding:'5px 10px', borderLeft:`3px solid ${th.accent}`,
+              background: isMe&&!isLight ? 'rgba(255,255,255,.12)' : `${th.accent}15`,
+              borderRadius:'0 8px 8px 0', fontSize:12 }}>
+              <p style={{ fontWeight:700, color: isMe&&!isLight?'rgba(255,255,255,.8)':th.accentLight, margin:'0 0 1px' }}>{msg.replyTo.displayName}</p>
+              <p style={{ opacity:.7, margin:0, color:textColor,
+                overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{msg.replyTo.text||'\uD83D\uDCF7 Media'}</p>
+            </div>
+          )}
+
+          {/* Image */}
+          {isImg && (
+            <div style={{ position:'relative', cursor:'pointer', borderRadius: isMe?'18px 18px 4px 18px':'18px 18px 18px 4px', overflow:'hidden' }} onClick={() => setImgView(true)}>
+              <img src={msg.image} alt="img" style={{ display:'block', maxHeight:280, width:'100%', objectFit:'cover' }}/>
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, height:48,
+                background:'linear-gradient(transparent,rgba(0,0,0,.55))' }}/>
+              <button onClick={e=>{e.stopPropagation();dlFile(msg.image,'image.jpg');}}
+                style={{ position:'absolute',top:8,right:8,padding:'5px 8px',borderRadius:8,
+                  background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',
+                  cursor:'pointer',color:'#fff',display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600 }}>
+                <Download size={11}/> Save
+              </button>
+            </div>
+          )}
+
+          {/* Video */}
+          {isVid && (
+            <div style={{ position:'relative', borderRadius: isMe?'18px 18px 4px 18px':'18px 18px 18px 4px', overflow:'hidden', maxWidth:300 }}>
+              <video src={msg.video} controls style={{ display:'block', width:'100%', maxHeight:240, background:'#000' }}/>
+              <button onClick={()=>dlFile(msg.video,'video.mp4')}
+                style={{ position:'absolute',top:8,right:8,padding:'5px 8px',borderRadius:8,
+                  background:'rgba(0,0,0,.55)',backdropFilter:'blur(6px)',border:'none',
+                  cursor:'pointer',color:'#fff',display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600 }}>
+                <Download size={11}/> Save
+              </button>
+            </div>
+          )}
+
+          {/* Text */}
+          {msg.text && (
+            <div style={{ padding: isImg||isVid ? '6px 10px 4px' : '0' }}>
+              {isImg||isVid ? (
+                <span style={{ fontSize:14, color:textColor }}>{msg.text}</span>
+              ) : (
+                <span style={{ fontSize:14, color:textColor, display:'block', paddingRight: isMe?28:20 }}>{msg.text}</span>
+              )}
+            </div>
+          )}
+
+          {/* Timestamp + status */}
+          {!isImg && !isVid && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:3,
+              marginTop:3, float:'right', marginLeft:8 }}>
+              <span style={{ fontSize:10, color: isMe?'rgba(255,255,255,.55)':th.textMuted, whiteSpace:'nowrap' }}>{getTime(msg.createdAt)}</span>
+              {isMe && <DoubleCheck reads={reads} accentLight={th.accentLight} isLight={isLight}/>}
+            </div>
+          )}
+          {(isImg||isVid) && msg.text && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:3, padding:'0 10px 6px' }}>
+              <span style={{ fontSize:10, color: isMe&&!isLight ? 'rgba(255,255,255,.55)' : th.textMuted }}>{getTime(msg.createdAt)}</span>
+              {isMe && <DoubleCheck reads={reads} accentLight={th.accentLight} isLight={isLight}/>}
+            </div>
+          )}
+          {(isImg||isVid) && !msg.text && (
+            <div style={{ position:'absolute', bottom:10, right:10, display:'flex', alignItems:'center', gap:3,
+              padding:'2px 6px', borderRadius:12, background:'rgba(0,0,0,.45)', backdropFilter:'blur(4px)' }}>
+              <span style={{ fontSize:10, color:'#fff' }}>{getTime(msg.createdAt)}</span>
+              {isMe && <DoubleCheck reads={reads} accentLight={th.accentLight} isLight={false}/>}
+            </div>
+          )}
         </div>
       </div>
-      {ctx&&<ContextMenu x={ctx.x} y={ctx.y} items={menuItems} onClose={()=>setCtx(null)} th={th}/>}
-      {imgView&&<ImageViewer src={msg.image} onClose={()=>setImgView(false)}/>}
+
+      {ctx && <CtxMenu x={ctx.x} y={ctx.y} items={menuItems} onClose={()=>setCtx(null)} th={th}/>}
+      {imgView && <ImageViewer src={msg.image} onClose={()=>setImgView(false)}/>}
     </div>
   );
-};
+});
 
-/* ══════════════════════════════════════
+/* ══════════════════════════
    MAIN APP
-══════════════════════════════════════ */
+══════════════════════════ */
 export default function App() {
-  const [firebaseUser,setFirebaseUser]=useState(null);
-  const [username,setUsername]=useState('');
-  const [isLoggedIn,setIsLoggedIn]=useState(false);
-  const [roomCode,setRoomCode]=useState(null);
-  const [roomInput,setRoomInput]=useState('');
-  const [pendingRoom,setPendingRoom]=useState(null);
-  const [messages,setMessages]=useState([]);
-  const [typingUsers,setTypingUsers]=useState([]);
-  const [newMessage,setNewMessage]=useState('');
-  const [imagePreview,setImagePreview]=useState(null);
-  const [videoPreview,setVideoPreview]=useState(null);
-  const [replyingTo,setReplyingTo]=useState(null);
-  const [isAdmin,setIsAdmin]=useState(false);
-  const [newMsgIds,setNewMsgIds]=useState(new Set());
-  const [showEmoji,setShowEmoji]=useState(false);
-  const [toast,setToast]=useState(null);
-  const [sending,setSending]=useState(false);
-  const [screen,setScreen]=useState('login');
-  const [loginName,setLoginName]=useState('');
-  const [loginPass,setLoginPass]=useState('');
-  const [loginError,setLoginError]=useState('');
-  const [loginLoading,setLoginLoading]=useState(false);
-  const [themeName,setThemeName]=useState(() => localStorage.getItem('chat_theme')||'dark');
-  const [showTheme,setShowTheme]=useState(false);
+  const [firebaseUser, setFirebaseUser]   = useState(null);
+  const [username, setUsername]           = useState('');
+  const [isLoggedIn, setIsLoggedIn]       = useState(false);
+  const [roomCode, setRoomCode]           = useState(null);
+  const [roomInput, setRoomInput]         = useState('');
+  const [pendingRoom, setPendingRoom]     = useState(null);
+  const [messages, setMessages]           = useState([]);
+  const [typingUsers, setTypingUsers]     = useState([]);
+  const [newMessage, setNewMessage]       = useState('');
+  const [imagePreview, setImagePreview]   = useState(null);
+  const [videoPreview, setVideoPreview]   = useState(null);
+  const [replyingTo, setReplyingTo]       = useState(null);
+  const [isAdmin, setIsAdmin]             = useState(false);
+  const [newMsgIds, setNewMsgIds]         = useState(new Set());
+  const [showEmoji, setShowEmoji]         = useState(false);
+  const [toast, setToast]                 = useState(null);
+  const [screen, setScreen]               = useState('login');
+  const [loginName, setLoginName]         = useState('');
+  const [loginPass, setLoginPass]         = useState('');
+  const [loginError, setLoginError]       = useState('');
+  const [loginLoading, setLoginLoading]   = useState(false);
+  const [themeName, setThemeName]         = useState(() => localStorage.getItem('wa_theme') || 'dark');
+  const [showTheme, setShowTheme]         = useState(false);
+  const [searchMode, setSearchMode]       = useState(false);
+  const [searchQ, setSearchQ]             = useState('');
+  const [showMoreMenu, setShowMoreMenu]   = useState(false);
 
   const th = THEMES[themeName] || THEMES.dark;
 
-  const dummy=useRef(); const typRef=useRef(null); const fileRef=useRef(null); const vidRef=useRef(null); const inputRef=useRef(null); const prevLen=useRef(0);
+  // Use ref for sending to avoid async state issues
+  const sendingRef  = useRef(false);
+  const [sendingUI, setSendingUI] = useState(false); // only for spinner display
+
+  const dummy    = useRef();
+  const typRef   = useRef(null);
+  const fileRef  = useRef(null);
+  const vidRef   = useRef(null);
+  const inputRef = useRef(null);
+  const prevLen  = useRef(0);
 
   /* ── PATHS ── */
-  const getMsgsRef=(rc=roomCode)=>{ if(rc==='brosis123')return collection(db,'messages'); if(rc==='public')return collection(db,'rooms','public','messages'); return collection(db,'rooms',rc,'messages'); };
-  const getTypRef=(rc=roomCode)=>{ if(rc==='brosis123')return collection(db,'typing'); if(rc==='public')return collection(db,'rooms','public','typing'); return collection(db,'rooms',rc,'typing'); };
+  const getMsgsRef = useCallback((rc = roomCode) => {
+    if (rc === 'brosis123') return collection(db, 'messages');
+    if (rc === 'public')    return collection(db, 'rooms', 'public', 'messages');
+    return collection(db, 'rooms', rc, 'messages');
+  }, [roomCode]);
+
+  const getTypRef = useCallback((rc = roomCode) => {
+    if (rc === 'brosis123') return collection(db, 'typing');
+    if (rc === 'public')    return collection(db, 'rooms', 'public', 'typing');
+    return collection(db, 'rooms', rc, 'typing');
+  }, [roomCode]);
 
   /* ── INIT ── */
-  useEffect(()=>{
-    signInAnonymously(auth).catch(()=>setFirebaseUser({uid:'guest_'+Math.random().toString(36).substr(2,9)}));
-    onAuthStateChanged(auth,u=>{if(u)setFirebaseUser(u);});
-    const saved=localStorage.getItem('chat_app_user');
-    if(saved){const{username:u}=JSON.parse(saved);setUsername(u);setIsLoggedIn(true);setScreen('rooms');}
-  },[]);
+  useEffect(() => {
+    signInAnonymously(auth).catch(() => setFirebaseUser({ uid: 'g_' + Math.random().toString(36).substr(2,9) }));
+    onAuthStateChanged(auth, u => { if (u) setFirebaseUser(u); });
+    const saved = localStorage.getItem('chat_app_user');
+    if (saved) {
+      try { const { username: u } = JSON.parse(saved); setUsername(u); setIsLoggedIn(true); setScreen('rooms'); } catch {}
+    }
+  }, []);
 
   /* ── MESSAGES ── */
-  useEffect(()=>{
-    if(!isLoggedIn||!roomCode)return;
-    setMessages([]);setTypingUsers([]);prevLen.current=0;
-    const q=query(getMsgsRef(),orderBy('createdAt'));
-    const unMsg=onSnapshot(q,snap=>{
-      const loaded=snap.docs.map(d=>({id:d.id,...d.data()}));
-      if(loaded.length>prevLen.current){const ids=loaded.slice(prevLen.current).map(m=>m.id);setNewMsgIds(prev=>new Set([...prev,...ids]));setTimeout(()=>setNewMsgIds(prev=>{const n=new Set(prev);ids.forEach(id=>n.delete(id));return n;}),700);}
-      prevLen.current=loaded.length;setMessages(loaded);
-      setTimeout(()=>dummy.current?.scrollIntoView({behavior:'smooth'}),80);
-      if(username)snap.docs.forEach(ds=>{const d=ds.data();if(d.senderName!==username&&!d.readBy?.some(r=>r.name===username)&&!d.deleted)updateDoc(ds.ref,{readBy:arrayUnion({name:username,readAt:Date.now()})}).catch(()=>{});});
+  useEffect(() => {
+    if (!isLoggedIn || !roomCode) return;
+    setMessages([]); setTypingUsers([]); prevLen.current = 0;
+    const q = query(getMsgsRef(), orderBy('createdAt'));
+    const unMsg = onSnapshot(q, snap => {
+      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (loaded.length > prevLen.current) {
+        const ids = loaded.slice(prevLen.current).map(m => m.id);
+        setNewMsgIds(prev => new Set([...prev, ...ids]));
+        setTimeout(() => setNewMsgIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; }), 600);
+      }
+      prevLen.current = loaded.length;
+      setMessages(loaded);
+      setTimeout(() => dummy.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+      if (username) snap.docs.forEach(ds => {
+        const d = ds.data();
+        if (d.senderName !== username && !d.readBy?.some(r => r.name === username) && !d.deleted)
+          updateDoc(ds.ref, { readBy: arrayUnion({ name: username, readAt: Date.now() }) }).catch(() => {});
+      });
     });
-    const unTyp=onSnapshot(getTypRef(),snap=>{const now=Date.now(),active=[];snap.forEach(d=>{if(d.id!==username){const dd=d.data();if(now-dd.timestamp<3000)active.push(dd.displayName);}});setTypingUsers(active);});
-    return()=>{unMsg();unTyp();};
-  },[username,isLoggedIn,roomCode]);
+    const unTyp = onSnapshot(getTypRef(), snap => {
+      const now = Date.now(), active = [];
+      snap.forEach(d => { if (d.id !== username) { const dd = d.data(); if (now - dd.timestamp < 3500) active.push(dd.displayName); } });
+      setTypingUsers(active);
+    });
+    return () => { unMsg(); unTyp(); };
+  }, [username, isLoggedIn, roomCode]);
 
-  const showToast=(msg,type='success')=>setToast({msg,type});
+  const toast$ = (msg, type='info') => setToast({ msg, type });
 
-  const changeTheme=(key)=>{setThemeName(key);localStorage.setItem('chat_theme',key);};
+  const changeTheme = (key) => { setThemeName(key); localStorage.setItem('wa_theme', key); };
 
   /* ── AUTH ── */
-  const handleLogin=async(e)=>{
-    e.preventDefault();setLoginError('');
-    const name=loginName.trim(),pass=loginPass.trim();
-    if(!name||!pass){setLoginError('Please fill in both fields.');return;}
+  const handleLogin = async (e) => {
+    e.preventDefault(); setLoginError('');
+    const name = loginName.trim(), pass = loginPass.trim();
+    if (!name || !pass) { setLoginError('Please enter both fields.'); return; }
     setLoginLoading(true);
-    try{
-      const ref=doc(db,'chat_users',name.toLowerCase());const snap=await getDoc(ref);
-      if(snap.exists()){if(snap.data().password===pass)completeLogin(name);else setLoginError('Incorrect password.');}
-      else{await setDoc(ref,{username:name,password:pass,createdAt:serverTimestamp()});completeLogin(name);}
-    }catch{setLoginError('Connection error. Please retry.');}
-    finally{setLoginLoading(false);}
+    try {
+      const ref = doc(db, 'chat_users', name.toLowerCase());
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        if (snap.data().password === pass) completeLogin(name);
+        else setLoginError('Incorrect password.');
+      } else {
+        await setDoc(ref, { username: name, password: pass, createdAt: serverTimestamp() });
+        completeLogin(name);
+      }
+    } catch { setLoginError('Connection error. Try again.'); }
+    finally { setLoginLoading(false); }
   };
 
-  const completeLogin=(name)=>{
-    setUsername(name);setIsLoggedIn(true);
-    localStorage.setItem('chat_app_user',JSON.stringify({username:name}));
-    setLoginName('');setLoginPass('');
-    if(pendingRoom){setRoomCode(pendingRoom);setPendingRoom(null);setScreen('chat');}else setScreen('rooms');
+  const completeLogin = (name) => {
+    setUsername(name); setIsLoggedIn(true);
+    localStorage.setItem('chat_app_user', JSON.stringify({ username: name }));
+    setLoginName(''); setLoginPass('');
+    if (pendingRoom) { setRoomCode(pendingRoom); setPendingRoom(null); setScreen('chat'); }
+    else setScreen('rooms');
   };
 
-  const handleLogout=()=>{localStorage.removeItem('chat_app_user');setIsLoggedIn(false);setUsername('');setRoomCode(null);setScreen('login');};
-
-  const handleJoinRoom=(e)=>{e.preventDefault();const code=roomInput.trim().toLowerCase();if(!code)return;if(!isLoggedIn){setPendingRoom(code);return;}setRoomCode(code);setScreen('chat');};
-  const joinPublicRoom=()=>{if(!isLoggedIn){setPendingRoom('public');return;}setRoomCode('public');setScreen('chat');};
-  const exitRoom=()=>{setRoomCode(null);setMessages([]);setRoomInput('');setScreen('rooms');};
-
-  const getMessageTime=(ts)=>{if(!ts)return '···';const d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});};
-
-  const handleTyping=(e)=>{setNewMessage(e.target.value);if(!isLoggedIn||!username||!roomCode)return;const ref=doc(getTypRef(),username);setDoc(ref,{displayName:username,timestamp:Date.now()});if(typRef.current)clearTimeout(typRef.current);typRef.current=setTimeout(()=>deleteDoc(ref),2000);};
-
-  const handleImageSelect=async(e)=>{const file=e.target.files[0];if(!file)return;if(file.size>10000000){showToast('Max 10MB','error');return;}try{const c=await compressImage(file);if(c.length>1000000){showToast('Image too complex','error');return;}setImagePreview(c);setVideoPreview(null);}catch{showToast('Failed to load image','error');}if(fileRef.current)fileRef.current.value='';};
-
-  const handleVideoSelect=async(e)=>{const file=e.target.files[0];if(!file)return;if(file.size>15000000){showToast('Max 15MB video','error');return;}const reader=new FileReader();reader.onload=ev=>{setVideoPreview(ev.target.result);setImagePreview(null);};reader.readAsDataURL(file);if(vidRef.current)vidRef.current.value='';};
-
-  const sendMessage=async(e)=>{
-    e.preventDefault();const text=newMessage.trim();
-    if((!text&&!imagePreview&&!videoPreview)||!firebaseUser||!isLoggedIn||!roomCode||sending)return;
-    setSending(true);if(typRef.current)clearTimeout(typRef.current);deleteDoc(doc(getTypRef(),username));
-    const t=newMessage,img=imagePreview,vid=videoPreview,rep=replyingTo;
-    setNewMessage('');setImagePreview(null);setVideoPreview(null);setReplyingTo(null);
-    if(fileRef.current)fileRef.current.value='';if(vidRef.current)vidRef.current.value='';
-    try{await addDoc(getMsgsRef(),{text:t,image:img||null,video:vid||null,createdAt:serverTimestamp(),senderName:username,displayName:username,photoURL:`https://api.dicebear.com/9.x/avataaars/svg?seed=${username}`,readBy:[],deleted:false,deletedFor:[],replyTo:rep?{id:rep.id,text:rep.text||(rep.image?'📷 Photo':rep.video?'🎥 Video':'Message'),displayName:rep.displayName}:null});}
-    catch{showToast('Failed to send','error');setNewMessage(t);setImagePreview(img);setVideoPreview(vid);setReplyingTo(rep);}
-    finally{setSending(false);inputRef.current?.focus();}
+  const handleLogout = () => {
+    localStorage.removeItem('chat_app_user');
+    setIsLoggedIn(false); setUsername(''); setRoomCode(null); setScreen('login');
   };
 
-  const handleAdminDelete=async(id)=>{if(isAdmin&&window.confirm('Permanently delete?'))try{await deleteDoc(doc(getMsgsRef(),id));}catch{showToast('Delete failed','error');}};
-  const handleSoftDelete=async(id,mode)=>{const ref=doc(getMsgsRef(),id);try{if(mode==='forAll'){await updateDoc(ref,{deleted:true,text:'',image:null,video:null});showToast('Deleted for everyone','info');}else{await updateDoc(ref,{deletedFor:arrayUnion(username)});showToast('Hidden for you','info');}}catch{showToast('Could not delete','error');}};
-  const clearChat=async()=>{if(!isAdmin||!window.confirm('Clear ALL messages?'))return;const snap=await getDocs(query(getMsgsRef()));snap.forEach(d=>deleteDoc(d.ref));showToast('Chat cleared','info');};
-  const toggleAdmin=()=>{if(isAdmin){setIsAdmin(false);showToast('Admin OFF','info');return;}const pw=window.prompt('Admin password:');if(pw==='admin123'){setIsAdmin(true);showToast('Admin ON 🔓','success');}else if(pw!==null)showToast('Wrong password','error');};
-  const addEmoji=(e)=>{setNewMessage(prev=>prev+e);inputRef.current?.focus();};
+  const handleJoinRoom = (e) => {
+    e.preventDefault();
+    const code = roomInput.trim().toLowerCase(); if (!code) return;
+    if (!isLoggedIn) { setPendingRoom(code); return; }
+    setRoomCode(code); setScreen('chat');
+  };
+
+  const joinPublicRoom = () => {
+    if (!isLoggedIn) { setPendingRoom('public'); return; }
+    setRoomCode('public'); setScreen('chat');
+  };
+
+  const exitRoom = () => {
+    setRoomCode(null); setMessages([]); setRoomInput(''); setScreen('rooms');
+    setSearchMode(false); setSearchQ('');
+  };
+
+  /* ── TYPING ── */
+  const handleTyping = (e) => {
+    setNewMessage(e.target.value);
+    if (!isLoggedIn || !username || !roomCode) return;
+    const ref = doc(getTypRef(), username);
+    setDoc(ref, { displayName: username, timestamp: Date.now() });
+    if (typRef.current) clearTimeout(typRef.current);
+    typRef.current = setTimeout(() => deleteDoc(ref), 2200);
+  };
+
+  /* ── MEDIA ── */
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 10000000) { toast$('Max 10MB for images', 'error'); return; }
+    try {
+      const c = await compressImage(file);
+      if (c.length > 1000000) { toast$('Image too large even after compression', 'error'); return; }
+      setImagePreview(c); setVideoPreview(null);
+    } catch { toast$('Failed to process image', 'error'); }
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleVideoSelect = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 15000000) { toast$('Max 15MB for videos', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = ev => { setVideoPreview(ev.target.result); setImagePreview(null); };
+    reader.readAsDataURL(file);
+    if (vidRef.current) vidRef.current.value = '';
+  };
+
+  /* ── SEND (fixed with useRef for sending state) ── */
+  const sendMessage = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const text = newMessage.trim();
+    if ((!text && !imagePreview && !videoPreview) || !firebaseUser || !isLoggedIn || !roomCode) return;
+    if (sendingRef.current) return; // guard with ref, not state
+
+    sendingRef.current = true;
+    setSendingUI(true);
+
+    if (typRef.current) clearTimeout(typRef.current);
+    deleteDoc(doc(getTypRef(), username)).catch(() => {});
+
+    // Snapshot values before clearing
+    const t = text, img = imagePreview, vid = videoPreview, rep = replyingTo;
+    setNewMessage('');
+    setImagePreview(null);
+    setVideoPreview(null);
+    setReplyingTo(null);
+    if (fileRef.current) fileRef.current.value = '';
+    if (vidRef.current)  vidRef.current.value  = '';
+    // Reset textarea height
+    if (inputRef.current) { inputRef.current.style.height = 'auto'; }
+
+    try {
+      await addDoc(getMsgsRef(), {
+        text: t, image: img || null, video: vid || null,
+        createdAt: serverTimestamp(),
+        senderName: username, displayName: username,
+        photoURL: 'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username,
+        readBy: [], deleted: false, deletedFor: [], starredBy: [],
+        replyTo: rep ? { id: rep.id, text: rep.text || (rep.image ? '\uD83D\uDCF7 Photo' : rep.video ? '\uD83C\uDFAC Video' : 'Message'), displayName: rep.displayName } : null,
+      });
+    } catch {
+      toast$('Message failed to send', 'error');
+      // Restore content on failure
+      setNewMessage(t); setImagePreview(img); setVideoPreview(vid); setReplyingTo(rep);
+    } finally {
+      sendingRef.current = false;
+      setSendingUI(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  };
+
+  /* ── MESSAGE ACTIONS ── */
+  const handleAdminDelete = async (id) => {
+    if (isAdmin && window.confirm('Delete this message permanently?'))
+      try { await deleteDoc(doc(getMsgsRef(), id)); } catch { toast$('Delete failed', 'error'); }
+  };
+
+  const handleSoftDelete = async (id, mode) => {
+    const ref = doc(getMsgsRef(), id);
+    try {
+      if (mode === 'forAll') {
+        await updateDoc(ref, { deleted: true, text: '', image: null, video: null });
+        toast$('Deleted for everyone', 'info');
+      } else {
+        await updateDoc(ref, { deletedFor: arrayUnion(username) });
+        toast$('Message hidden for you', 'info');
+      }
+    } catch { toast$('Could not delete', 'error'); }
+  };
+
+  const handleStar = async (id, isStarred) => {
+    const ref = doc(getMsgsRef(), id);
+    try {
+      if (isStarred) await updateDoc(ref, { starredBy: arrayRemove(username) });
+      else await updateDoc(ref, { starredBy: arrayUnion(username) });
+    } catch { toast$('Could not star', 'error'); }
+  };
+
+  const clearChat = async () => {
+    if (!isAdmin || !window.confirm('Clear ALL messages in this room?')) return;
+    const snap = await getDocs(query(getMsgsRef()));
+    snap.forEach(d => deleteDoc(d.ref));
+    toast$('Chat cleared', 'info');
+  };
+
+  const toggleAdmin = () => {
+    if (isAdmin) { setIsAdmin(false); toast$('Admin mode off', 'info'); return; }
+    const pw = window.prompt('Enter admin password:');
+    if (pw === 'admin123') { setIsAdmin(true); toast$('Admin mode on', 'success'); }
+    else if (pw !== null) toast$('Wrong password', 'error');
+  };
+
+  const addEmoji = (e) => {
+    setNewMessage(prev => prev + e);
+    setShowEmoji(false);
+    setTimeout(() => inputRef.current?.focus(), 30);
+  };
+
+  /* ── FILTERED MESSAGES (search) ── */
+  const visibleMessages = searchMode && searchQ
+    ? messages.filter(m => m.text?.toLowerCase().includes(searchQ.toLowerCase()))
+    : messages;
+
+  /* ── DATE SEPARATORS ── */
+  const withSeparators = [];
+  let lastDateLabel = '';
+  visibleMessages.forEach(msg => {
+    const label = getDateLabel(msg.createdAt);
+    if (label && label !== lastDateLabel) {
+      withSeparators.push({ type: 'sep', label, id: 'sep_' + label });
+      lastDateLabel = label;
+    }
+    withSeparators.push({ type: 'msg', msg });
+  });
 
   /* ── STYLE HELPERS ── */
-  const focusIn=e=>{e.target.style.borderColor=th.accent;e.target.style.boxShadow=`0 0 0 3px ${th.accent}25`;e.target.style.background=th.btnGlass;};
-  const focusOut=e=>{e.target.style.borderColor=th.inputBorder;e.target.style.boxShadow='none';e.target.style.background=th.inputBg;};
-  const T={
-    page:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',padding:16,position:'relative',overflow:'hidden',background:th.bgGrad},
-    card:{background:th.card,backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',border:`1px solid ${th.cardBorder}`,borderRadius:24,padding:32,width:'100%',maxWidth:380,boxShadow:'0 32px 80px rgba(0,0,0,.5)',position:'relative',zIndex:10,animation:'fadeScale .35s cubic-bezier(.34,1.56,.64,1) forwards'},
-    input:{background:th.inputBg,border:`1px solid ${th.inputBorder}`,borderRadius:12,padding:'11px 14px 11px 40px',color:th.inputText,fontSize:14,fontFamily:'inherit',width:'100%',outline:'none',transition:'all .2s',boxSizing:'border-box'},
-    btnPrimary:{background:th.accentGrad,border:'none',borderRadius:12,color:'#fff',fontFamily:'inherit',fontSize:14,fontWeight:600,cursor:'pointer',padding:'12px 16px',width:'100%',boxShadow:`0 4px 20px ${th.accent}40`,transition:'all .2s',display:'flex',alignItems:'center',justifyContent:'center',gap:8},
-    divLine:{flex:1,height:1,background:th.divider},
-  };
+  const focusIn  = e => { e.target.style.borderColor = th.accent; e.target.style.boxShadow = '0 0 0 3px ' + th.accent + '22'; };
+  const focusOut = e => { e.target.style.borderColor = th.inputBorder; e.target.style.boxShadow = 'none'; };
 
-  /* ══ SCREEN: LOGIN — EDUCATIONAL DESIGN ══ */
+  const inp = { background:th.inputBg, border:'1px solid ' + th.inputBorder, borderRadius:12,
+    padding:'11px 14px 11px 40px', color:th.inputText, fontSize:14,
+    fontFamily:'inherit', width:'100%', outline:'none', transition:'border-color .2s, box-shadow .2s', boxSizing:'border-box' };
+
+  const btn1 = { background:th.accentGrad, border:'none', borderRadius:12, color:'#fff',
+    fontFamily:'inherit', fontSize:14, fontWeight:600, cursor:'pointer',
+    padding:'12px 16px', width:'100%', boxShadow:'0 4px 20px ' + th.glow,
+    transition:'opacity .2s', display:'flex', alignItems:'center', justifyContent:'center', gap:8 };
+
+  const themeBtn = { width:34, height:34, borderRadius:10, display:'flex', alignItems:'center',
+    justifyContent:'center', background:th.glass, border:'1px solid ' + th.glassBorder,
+    cursor:'pointer', fontSize:18 };
+
+  const iconBtn = (active) => ({
+    width:36, height:36, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center',
+    background: active ? th.accent+'25' : th.glass, border: '1px solid ' + (active ? th.accent+'55' : th.glassBorder),
+    cursor:'pointer', flexShrink:0, transition:'all .15s'
+  });
+
+  /* ══ LOGIN SCREEN ══ */
   if (screen === 'login') return (
-    <div style={{ ...T.page, justifyContent:'flex-start', paddingTop:0 }}>
-      {toast&&<Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
-
-      {/* Theme toggle top-right */}
-      <div style={{ position:'absolute',top:14,right:14,zIndex:50 }}>
-        <button onClick={()=>setShowTheme(v=>!v)} style={{ width:36,height:36,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',background:th.card,border:`1px solid ${th.cardBorder}`,cursor:'pointer',fontSize:18 }} title="Change Theme">{th.icon}</button>
-        {showTheme&&<ThemePicker current={themeName} onChange={changeTheme} onClose={()=>setShowTheme(false)} th={th}/>}
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:th.bgGrad, fontFamily:'inherit', overflowY:'auto' }}>
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
+      <div style={{ position:'fixed', top:14, right:14, zIndex:200 }}>
+        <button onClick={() => setShowTheme(v => !v)} style={themeBtn} title="Change theme">{th.icon}</button>
+        {showTheme && <ThemePicker current={themeName} onChange={changeTheme} onClose={() => setShowTheme(false)} th={th}/>}
       </div>
 
-      {/* ── HERO HEADER ── */}
-      <div style={{ width:'100%',background:th.accentGrad,padding:'32px 20px 60px',textAlign:'center',position:'relative',overflow:'hidden' }}>
-        <div style={{ position:'absolute',top:-40,left:-40,width:200,height:200,borderRadius:'50%',background:'rgba(255,255,255,.06)',pointerEvents:'none' }}/>
-        <div style={{ position:'absolute',bottom:-60,right:-30,width:240,height:240,borderRadius:'50%',background:'rgba(255,255,255,.04)',pointerEvents:'none' }}/>
-        <div style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:12 }}>
-          <div style={{ width:44,height:44,borderRadius:13,background:'rgba(255,255,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',animation:'floatY 3s ease-in-out infinite' }}>
-            <GraduationCap size={26} style={{ color:'#fff' }}/>
+      {/* Hero */}
+      <div style={{ background:th.accentGrad, padding:'40px 20px 64px', textAlign:'center', position:'relative', overflow:'hidden', flexShrink:0 }}>
+        {[{t:-50,l:-50,s:220},{t:-30,r:-60,s:180}].map((c,i)=>(
+          <div key={i} style={{ position:'absolute', top:c.t, left:c.l, right:c.r, width:c.s, height:c.s, borderRadius:'50%', background:'rgba(255,255,255,.06)', pointerEvents:'none' }}/>
+        ))}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, marginBottom:14 }}>
+          <div style={{ width:50, height:50, borderRadius:14, background:'rgba(255,255,255,.18)', display:'flex', alignItems:'center', justifyContent:'center', animation:'waFloat 3s ease-in-out infinite' }}>
+            <GraduationCap size={28} style={{ color:'#fff' }}/>
           </div>
-          <span style={{ color:'rgba(255,255,255,.9)',fontSize:22,fontWeight:800,letterSpacing:-.5 }}>StudyBox</span>
+          <span style={{ color:'#fff', fontSize:26, fontWeight:800, letterSpacing:-.5 }}>StudyBox</span>
         </div>
-        <h1 style={{ color:'#fff',fontSize:26,fontWeight:800,margin:'0 0 8px',letterSpacing:-.5 }}>Your Study Hub 📚</h1>
-        <p style={{ color:'rgba(255,255,255,.75)',fontSize:14,margin:0 }}>Connect, collaborate and chat with your study group</p>
-
-        {/* Stats bar */}
-        <div style={{ display:'flex',justifyContent:'center',gap:24,marginTop:20 }}>
-          {[{icon:<Users size={14}/>,val:'1.2k',label:'Students'},{icon:<MessageSquare size={14}/>,val:'24/7',label:'Active'},{icon:<Star size={14}/>,val:'4.9★',label:'Rated'}].map((s,i)=>(
+        <h1 style={{ color:'#fff', fontSize:22, fontWeight:700, margin:'0 0 8px' }}>Your Study Chat Hub \uD83D\uDCDA</h1>
+        <p style={{ color:'rgba(255,255,255,.75)', fontSize:13, margin:0 }}>Connect with classmates · Share notes · Study together</p>
+        <div style={{ display:'flex', justifyContent:'center', gap:28, marginTop:20 }}>
+          {[{icon:'\uD83D\uDC65',val:'1.2k',label:'Students'},{icon:'\u26A1',val:'24/7',label:'Online'},{icon:'\u2B50',val:'4.9',label:'Rating'}].map((s,i) => (
             <div key={i} style={{ textAlign:'center' }}>
-              <div style={{ display:'flex',alignItems:'center',gap:4,color:'rgba(255,255,255,.8)',fontSize:11,justifyContent:'center',marginBottom:2 }}>{s.icon}<span style={{ fontWeight:700,fontSize:15 }}>{s.val}</span></div>
-              <span style={{ color:'rgba(255,255,255,.55)',fontSize:10 }}>{s.label}</span>
+              <div style={{ fontSize:18 }}>{s.icon}</div>
+              <div style={{ color:'#fff', fontWeight:800, fontSize:16 }}>{s.val}</div>
+              <div style={{ color:'rgba(255,255,255,.6)', fontSize:10 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── LOGIN CARD (overlapping) ── */}
-      <div style={{ width:'100%',maxWidth:400,padding:'0 16px',marginTop:-30,zIndex:10,position:'relative' }}>
-        <div style={{ background:th.card,backdropFilter:'blur(40px)',WebkitBackdropFilter:'blur(40px)',border:`1px solid ${th.cardBorder}`,borderRadius:22,padding:'28px 24px',boxShadow:'0 24px 60px rgba(0,0,0,.4)',animation:'fadeScale .35s cubic-bezier(.34,1.56,.64,1) forwards' }}>
-          <h2 style={{ color:th.text,fontSize:17,fontWeight:800,margin:'0 0 4px' }}>Sign in to StudyBox</h2>
-          <p style={{ color:th.textMuted,fontSize:12,margin:'0 0 18px' }}>New here? Your account is created automatically.</p>
-          <form onSubmit={handleLogin} style={{ display:'flex',flexDirection:'column',gap:10 }}>
+      {/* Login card */}
+      <div style={{ maxWidth:400, width:'100%', margin:'-28px auto 0', padding:'0 16px 32px', zIndex:10, position:'relative' }}>
+        <div style={{ background:th.id==='light'?'#fff':th.card, backdropFilter:'blur(30px)',
+          border:'1px solid ' + th.cardBorder, borderRadius:22,
+          padding:'26px 22px', boxShadow:'0 20px 60px rgba(0,0,0,.35)', animation:'waFadeUp .35s ease' }}>
+          <h2 style={{ color:th.text, fontSize:17, fontWeight:800, margin:'0 0 3px' }}>Sign in to StudyBox</h2>
+          <p style={{ color:th.textMuted, fontSize:12, margin:'0 0 16px' }}>New users are registered automatically</p>
+          <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:10 }}>
             <div style={{ position:'relative' }}>
-              <User size={14} style={{ position:'absolute',left:12,top:13,color:th.placeholder,pointerEvents:'none' }}/>
-              <input autoFocus value={loginName} onChange={e=>setLoginName(e.target.value)} placeholder="Your name / Student ID" style={{ ...T.input,fontSize:13 }} onFocus={focusIn} onBlur={focusOut}/>
+              <User size={14} style={{ position:'absolute', left:12, top:13, color:th.placeholder, pointerEvents:'none' }}/>
+              <input autoFocus value={loginName} onChange={e=>setLoginName(e.target.value)} placeholder="Username or Student ID" style={inp} onFocus={focusIn} onBlur={focusOut}/>
             </div>
             <div style={{ position:'relative' }}>
-              <Key size={14} style={{ position:'absolute',left:12,top:13,color:th.placeholder,pointerEvents:'none' }}/>
-              <input type="password" value={loginPass} onChange={e=>setLoginPass(e.target.value)} placeholder="Create or enter password" style={{ ...T.input,fontSize:13 }} onFocus={focusIn} onBlur={focusOut}/>
+              <Key size={14} style={{ position:'absolute', left:12, top:13, color:th.placeholder, pointerEvents:'none' }}/>
+              <input type="password" value={loginPass} onChange={e=>setLoginPass(e.target.value)} placeholder="Create or enter your password" style={inp} onFocus={focusIn} onBlur={focusOut}/>
             </div>
-            {loginError&&<div style={{ padding:'8px 12px',borderRadius:9,background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.25)',color:'#f87171',fontSize:12,fontWeight:600 }}>{loginError}</div>}
-            <button type="submit" disabled={loginLoading} style={{ ...T.btnPrimary,opacity:loginLoading?.7:1,fontSize:13 }}>
-              {loginLoading?<span style={{ width:16,height:16,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 1s linear infinite',display:'block' }}/>:<><Zap size={14}/>Enter StudyBox</>}
+            {loginError && <div style={{ padding:'8px 12px', borderRadius:9, background:'rgba(239,68,68,.1)', border:'1px solid rgba(239,68,68,.3)', color:'#f87171', fontSize:12, fontWeight:600 }}>{loginError}</div>}
+            <button type="submit" disabled={loginLoading} style={{ ...btn1, opacity:loginLoading?.7:1 }}>
+              {loginLoading ? <Spinner size={16}/> : <><Zap size={15}/>Enter StudyBox</>}
             </button>
           </form>
 
-          {/* Features row */}
-          <div style={{ display:'flex',gap:8,marginTop:14 }}>
-            {[{emoji:'🔒',text:'Private rooms'},{emoji:'📸',text:'Share media'},{emoji:'⚡',text:'Instant'},{emoji:'🎨',text:'Themes'}].map((f,i)=>(
-              <div key={i} style={{ flex:1,textAlign:'center',padding:'7px 4px',borderRadius:10,background:th.inputBg,border:`1px solid ${th.divider}` }}>
-                <div style={{ fontSize:14 }}>{f.emoji}</div>
-                <div style={{ color:th.textMuted,fontSize:9,fontWeight:600,marginTop:2 }}>{f.text}</div>
+          <div style={{ display:'flex', gap:8, marginTop:14 }}>
+            {['\uD83D\uDD12 Private rooms','\uD83D\uDCF8 Media sharing','\uD83D\uDCA1 Reply & Star','\uD83C\uDFA8 Themes'].map((f,i) => (
+              <div key={i} style={{ flex:1, textAlign:'center', padding:'7px 3px', borderRadius:10, background:th.glass, border:'1px solid ' + th.glassBorder }}>
+                <div style={{ fontSize:11, color:th.textMuted, fontWeight:600, lineHeight:1.4 }}>{f}</div>
               </div>
             ))}
           </div>
 
-          {/* Private room pre-fill */}
-          <div style={{ marginTop:16,display:'flex',alignItems:'center',gap:10 }}><div style={T.divLine}/><span style={{ color:th.textMuted,fontSize:10,whiteSpace:'nowrap' }}>JOIN A STUDY ROOM</span><div style={T.divLine}/></div>
-          <form onSubmit={e=>{e.preventDefault();const c=roomInput.trim().toLowerCase();if(c)setPendingRoom(c);}} style={{ display:'flex',gap:8,marginTop:10 }}>
-            <div style={{ position:'relative',flex:1 }}>
-              <Hash size={12} style={{ position:'absolute',left:10,top:12,color:th.placeholder,pointerEvents:'none' }}/>
-              <input value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Room code or class code..." style={{ ...T.input,paddingLeft:28,paddingTop:9,paddingBottom:9,fontSize:12 }} onFocus={focusIn} onBlur={focusOut}/>
+          <div style={{ display:'flex', alignItems:'center', gap:10, margin:'16px 0 12px' }}>
+            <div style={{ flex:1, height:1, background:th.divider }}/><span style={{ color:th.textMuted, fontSize:10, whiteSpace:'nowrap' }}>JOIN PRIVATE ROOM</span><div style={{ flex:1, height:1, background:th.divider }}/>
+          </div>
+          <form onSubmit={e=>{e.preventDefault();const c=roomInput.trim().toLowerCase();if(c)setPendingRoom(c);}} style={{ display:'flex', gap:8 }}>
+            <div style={{ position:'relative', flex:1 }}>
+              <Hash size={12} style={{ position:'absolute', left:10, top:12, color:th.placeholder, pointerEvents:'none' }}/>
+              <input value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Class / room code..." style={{ ...inp, paddingLeft:28, paddingTop:9, paddingBottom:9, fontSize:13 }} onFocus={focusIn} onBlur={focusOut}/>
             </div>
-            <button type="submit" style={{ background:th.accentGrad,border:'none',borderRadius:11,color:'#fff',padding:'9px 13px',cursor:'pointer',display:'flex',alignItems:'center' }}><ArrowRight size={14}/></button>
+            <button type="submit" style={{ background:th.accentGrad, border:'none', borderRadius:11, color:'#fff', padding:'9px 13px', cursor:'pointer', display:'flex', alignItems:'center' }}><ArrowRight size={14}/></button>
           </form>
-          {pendingRoom&&<div style={{ marginTop:7,padding:'7px 11px',borderRadius:8,background:`${th.accent}18`,border:`1px solid ${th.accent}35`,color:th.accentLight,fontSize:11,fontWeight:600,display:'flex',alignItems:'center',gap:5 }}><ShieldCheck size={11}/> Will join <b style={{ marginLeft:2 }}>#{pendingRoom}</b> after login</div>}
+          {pendingRoom && (
+            <div style={{ marginTop:8, padding:'7px 12px', borderRadius:9, background:th.accent+'18', border:'1px solid ' + th.accent+'35', color:th.accentLight, fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
+              <ShieldCheck size={12}/> Will enter <b style={{ marginLeft:3 }}>#{pendingRoom}</b> after login
+            </div>
+          )}
         </div>
+        <p style={{ textAlign:'center', color:th.textMuted, fontSize:11, marginTop:12 }}>No email required · Instant access \u2728</p>
       </div>
-
-      {/* Footer note */}
-      <p style={{ color:th.textMuted,fontSize:11,marginTop:16,textAlign:'center' }}>No email · No sign-up · Just enter a name & password ✨</p>
     </div>
   );
 
-  /* ══ SCREEN: ROOMS ══ */
+  /* ══ ROOMS SCREEN ══ */
   if (screen === 'rooms') return (
-    <div style={T.page}>
-      {toast&&<Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
-      {showTheme&&<ThemePicker current={themeName} onChange={changeTheme} onClose={()=>setShowTheme(false)} th={th}/>}
-      <div style={{ position:'absolute',top:'30%',right:'20%',width:280,height:280,borderRadius:'50%',background:`radial-gradient(circle,${th.accent}12 0%,transparent 70%)`,filter:'blur(40px)',pointerEvents:'none' }}/>
-      <div style={T.card}>
-        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:22 }}>
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:th.bgGrad, padding:16, position:'relative' }}>
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
+      {showTheme && <ThemePicker current={themeName} onChange={changeTheme} onClose={() => setShowTheme(false)} th={th}/>}
+
+      <div style={{ maxWidth:360, width:'100%', background:th.id==='light'?'#fff':th.card, backdropFilter:'blur(30px)', border:'1px solid ' + th.cardBorder, borderRadius:24, padding:28, boxShadow:'0 24px 60px rgba(0,0,0,.4)', animation:'waFadeUp .3s ease' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
           <div>
-            <div style={{ display:'flex',alignItems:'center',gap:7,marginBottom:3 }}>
-              <GraduationCap size={18} style={{ color:th.accentLight }}/>
-              <h2 style={{ color:th.text,fontSize:17,fontWeight:800,margin:0 }}>StudyBox</h2>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+              <div style={{ width:34, height:34, borderRadius:10, background:th.accentGrad, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <GraduationCap size={18} style={{ color:'#fff' }}/>
+              </div>
+              <h2 style={{ color:th.text, fontSize:18, fontWeight:800, margin:0 }}>StudyBox</h2>
             </div>
-            <p style={{ color:th.textMuted,fontSize:12,margin:0 }}>Hey <span style={{ color:th.accentLight,fontWeight:700 }}>{username}</span> 👋 Where to?</p>
+            <p style={{ color:th.textMuted, fontSize:12, margin:0 }}>Hi <span style={{ color:th.accentLight, fontWeight:700 }}>{username}</span> \uD83D\uDC4B</p>
           </div>
-          <div style={{ display:'flex',gap:8,alignItems:'center' }}>
-            <button onClick={()=>setShowTheme(v=>!v)} style={{ width:34,height:34,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}`,cursor:'pointer',fontSize:16 }} title="Change Theme">{th.icon}</button>
-            <img src={`https://api.dicebear.com/9.x/avataaars/svg?seed=${username}`} alt="av" style={{ width:40,height:40,borderRadius:'50%',boxShadow:`0 0 0 2px ${th.accent}60` }}/>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <button onClick={() => setShowTheme(v => !v)} style={themeBtn}>{th.icon}</button>
+            <img src={'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username} alt="av"
+              style={{ width:40, height:40, borderRadius:'50%', boxShadow:'0 0 0 2px ' + th.accent+'70' }}/>
           </div>
         </div>
-        <label style={{ fontSize:10,fontWeight:700,color:th.textMuted,display:'flex',alignItems:'center',gap:5,marginBottom:7,letterSpacing:.5 }}><Lock size={10}/> PRIVATE STUDY ROOM</label>
-        <form onSubmit={handleJoinRoom} style={{ display:'flex',gap:8,marginBottom:18 }}>
-          <div style={{ position:'relative',flex:1 }}>
-            <Hash size={13} style={{ position:'absolute',left:11,top:13,color:th.placeholder,pointerEvents:'none' }}/>
-            <input autoFocus value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Enter room or class code..." style={T.input} onFocus={focusIn} onBlur={focusOut}/>
+
+        <label style={{ fontSize:10, fontWeight:700, color:th.textMuted, display:'flex', alignItems:'center', gap:5, marginBottom:8, letterSpacing:.7 }}><Lock size={10}/> PRIVATE STUDY ROOM</label>
+        <form onSubmit={handleJoinRoom} style={{ display:'flex', gap:8, marginBottom:18 }}>
+          <div style={{ position:'relative', flex:1 }}>
+            <Hash size={13} style={{ position:'absolute', left:11, top:13, color:th.placeholder, pointerEvents:'none' }}/>
+            <input autoFocus value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Enter room or class code..." style={inp} onFocus={focusIn} onBlur={focusOut}/>
           </div>
-          <button type="submit" disabled={!roomInput.trim()} style={{ background:th.accentGrad,border:'none',borderRadius:12,color:'#fff',padding:'11px 14px',cursor:'pointer',display:'flex',alignItems:'center',opacity:roomInput.trim()?1:.45 }}><ArrowRight size={16}/></button>
+          <button type="submit" disabled={!roomInput.trim()} style={{ background:th.accentGrad, border:'none', borderRadius:12, color:'#fff', padding:'11px 14px', cursor:'pointer', display:'flex', alignItems:'center', opacity:roomInput.trim()?1:.4 }}>
+            <ArrowRight size={16}/>
+          </button>
         </form>
-        <div style={{ display:'flex',alignItems:'center',gap:12,margin:'16px 0' }}><div style={T.divLine}/><span style={{ color:th.textMuted,fontSize:10 }}>OR</span><div style={T.divLine}/></div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:12, margin:'16px 0' }}>
+          <div style={{ flex:1, height:1, background:th.divider }}/><span style={{ color:th.textMuted, fontSize:10 }}>OR</span><div style={{ flex:1, height:1, background:th.divider }}/>
+        </div>
+
         <button onClick={joinPublicRoom}
-          style={{ width:'100%',padding:'13px 14px',borderRadius:14,display:'flex',alignItems:'center',gap:11,cursor:'pointer',background:`rgba(59,130,246,.09)`,border:'1px solid rgba(59,130,246,.2)',transition:'all .2s',marginBottom:10 }}
-          onMouseEnter={e=>{e.currentTarget.style.background='rgba(59,130,246,.16)';e.currentTarget.style.transform='translateY(-1px)';}}
-          onMouseLeave={e=>{e.currentTarget.style.background='rgba(59,130,246,.09)';e.currentTarget.style.transform='translateY(0)';}}
-        >
-          <div style={{ width:38,height:38,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#3b82f6,#2563eb)',flexShrink:0 }}><Globe size={16} style={{ color:'#fff' }}/></div>
-          <div style={{ textAlign:'left',flex:1 }}>
-            <p style={{ color:th.text,fontWeight:700,fontSize:13,margin:0 }}>Open Study Hall</p>
-            <p style={{ color:th.textMuted,fontSize:11,marginTop:2 }}>Public chat — open to all students</p>
+          style={{ width:'100%', padding:'13px 14px', borderRadius:14, display:'flex', alignItems:'center', gap:12, cursor:'pointer', background:'rgba(59,130,246,.09)', border:'1px solid rgba(59,130,246,.22)', transition:'all .18s', marginBottom:12 }}
+          onMouseEnter={e=>{e.currentTarget.style.background='rgba(59,130,246,.18)';e.currentTarget.style.transform='translateY(-1px)';}}
+          onMouseLeave={e=>{e.currentTarget.style.background='rgba(59,130,246,.09)';e.currentTarget.style.transform='translateY(0)';}}>
+          <div style={{ width:40, height:40, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#3b82f6,#2563eb)', flexShrink:0 }}><Globe size={18} style={{ color:'#fff' }}/></div>
+          <div style={{ textAlign:'left', flex:1 }}>
+            <p style={{ color:th.text, fontWeight:700, fontSize:13, margin:0 }}>Open Study Hall</p>
+            <p style={{ color:th.textMuted, fontSize:11, marginTop:2 }}>Public · Anyone can join</p>
           </div>
           <ArrowRight size={13} style={{ color:th.textMuted }}/>
         </button>
+
         <button onClick={handleLogout}
-          style={{ width:'100%',padding:'9px 14px',borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',gap:7,cursor:'pointer',background:'rgba(239,68,68,.06)',border:'1px solid rgba(239,68,68,.1)',color:'rgba(239,68,68,.7)',fontSize:12,fontWeight:600,fontFamily:'inherit',transition:'all .2s' }}
-          onMouseEnter={e=>{e.currentTarget.style.background='rgba(239,68,68,.13)';e.currentTarget.style.color='#f87171';}}
-          onMouseLeave={e=>{e.currentTarget.style.background='rgba(239,68,68,.06)';e.currentTarget.style.color='rgba(239,68,68,.7)';}}
-        ><LogOut size={13}/> Sign Out</button>
+          style={{ width:'100%', padding:'10px', borderRadius:11, display:'flex', alignItems:'center', justifyContent:'center', gap:7, cursor:'pointer', background:'rgba(239,68,68,.07)', border:'1px solid rgba(239,68,68,.15)', color:'rgba(239,68,68,.8)', fontSize:13, fontWeight:600, fontFamily:'inherit', transition:'all .18s' }}
+          onMouseEnter={e=>{e.currentTarget.style.background='rgba(239,68,68,.15)';e.currentTarget.style.color='#f87171';}}
+          onMouseLeave={e=>{e.currentTarget.style.background='rgba(239,68,68,.07)';e.currentTarget.style.color='rgba(239,68,68,.8)';}}>
+          <LogOut size={14}/> Sign Out
+        </button>
       </div>
     </div>
   );
 
-  /* ══ SCREEN: CHAT ══ */
-  const isPublic=roomCode==='public';
-  const hasMedia=!!imagePreview||!!videoPreview;
+  /* ══ CHAT SCREEN ══ */
+  const isPublic = roomCode === 'public';
+  const hasMedia = !!imagePreview || !!videoPreview;
+  const canSend  = (newMessage.trim() || hasMedia) && !sendingUI;
 
   return (
-    <div style={{ display:'flex',flexDirection:'column',height:'100vh',background:th.bg,position:'relative' }}>
-      {toast&&<Toast message={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
-      {showTheme&&<ThemePicker current={themeName} onChange={changeTheme} onClose={()=>setShowTheme(false)} th={th}/>}
-      <div style={{ position:'absolute',top:0,left:'50%',transform:'translateX(-50%)',width:'80%',height:'40%',background:`radial-gradient(ellipse,${th.accent}08 0%,transparent 70%)`,filter:'blur(40px)',pointerEvents:'none',zIndex:0 }}/>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:th.chatBg, position:'relative', overflow:'hidden' }}
+      onClick={() => { if(showTheme) setShowTheme(false); if(showMoreMenu) setShowMoreMenu(false); }}>
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
+      {showTheme && <ThemePicker current={themeName} onChange={changeTheme} onClose={() => setShowTheme(false)} th={th}/>}
 
-      {/* ══ HEADER ══ */}
-      <header style={{ background:th.header,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',borderBottom:`1px solid ${th.divider}`,padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',zIndex:20,position:'relative' }}>
-        <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-          {/* ── EXIT BUTTON — PROMINENT ── */}
+      {/* ── HEADER ── */}
+      <header style={{ background:th.header, backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)',
+        borderBottom:'1px solid ' + th.divider, padding:'9px 14px',
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        zIndex:30, position:'relative', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {/* LEAVE BUTTON */}
           <button onClick={exitRoom}
-            style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:10,background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.22)',cursor:'pointer',transition:'all .2s',color:'#f87171',fontFamily:'inherit',fontWeight:700,fontSize:12 }}
-            onMouseEnter={e=>{e.currentTarget.style.background='rgba(239,68,68,.2)';e.currentTarget.style.transform='scale(1.03)';}}
-            onMouseLeave={e=>{e.currentTarget.style.background='rgba(239,68,68,.1)';e.currentTarget.style.transform='scale(1)';}}
-            title="Leave Room"
-          >
-            <ArrowLeft size={14}/><span>Leave</span>
-          </button>
+            style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 12px', borderRadius:10,
+              background:'rgba(239,68,68,.12)', border:'1px solid rgba(239,68,68,.25)',
+              cursor:'pointer', color:'#f87171', fontFamily:'inherit', fontWeight:700, fontSize:12,
+              transition:'all .17s', flexShrink:0 }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(239,68,68,.22)';}}
+            onMouseLeave={e=>{e.currentTarget.style.background='rgba(239,68,68,.12)';}}
+          ><ArrowLeft size={14}/> Leave</button>
 
-          <div style={{ display:'flex',alignItems:'center',gap:9 }}>
-            <div style={{ width:34,height:34,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',background:isPublic?'linear-gradient(135deg,#3b82f6,#2563eb)':th.accentGrad }}>
-              {isPublic?<Globe size={15} style={{ color:'#fff' }}/>:<Lock size={15} style={{ color:'#fff' }}/>}
+          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <div style={{ width:36, height:36, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center',
+              background: isPublic ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)' : th.accentGrad,
+              boxShadow:'0 2px 12px rgba(0,0,0,.25)' }}>
+              {isPublic ? <Globe size={17} style={{ color:'#fff' }}/> : <Lock size={17} style={{ color:'#fff' }}/>}
             </div>
             <div>
-              <div style={{ display:'flex',alignItems:'center',gap:7 }}>
-                <h1 style={{ color:th.text,fontSize:13,fontWeight:800,margin:0 }}>{isPublic?'Open Study Hall':roomCode==='brosis123'?'Private History':`#${roomCode}`}</h1>
-                <span style={{ fontSize:9,padding:'2px 5px',borderRadius:5,fontWeight:700,background:`${th.accent}20`,color:th.accentLight,border:`1px solid ${th.accent}35` }}>{isPublic?'PUBLIC':'PRIVATE'}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                <h1 style={{ color:th.text, fontSize:14, fontWeight:800, margin:0 }}>
+                  {isPublic ? 'Open Study Hall' : roomCode==='brosis123' ? 'Private History' : '#' + roomCode}
+                </h1>
+                <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, fontWeight:700, background:th.accent+'22', color:th.accentLight, border:'1px solid ' + th.accent+'40' }}>
+                  {isPublic?'PUBLIC':'PRIVATE'}
+                </span>
               </div>
-              <div style={{ display:'flex',alignItems:'center',gap:5,marginTop:2 }}>
-                <span style={{ width:6,height:6,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 5px rgba(34,197,94,.6)',display:'inline-block' }}/>
-                <span style={{ color:'#22c55e',fontSize:10,fontWeight:600 }}>{username}</span>
-                <span style={{ color:th.textMuted,fontSize:10 }}>· {messages.filter(m=>!m.deleted&&!m.deletedFor?.includes(username)).length} msgs</span>
+              <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:2 }}>
+                <span style={{ width:6, height:6, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 5px #22c55e80', display:'inline-block' }}/>
+                <span style={{ color:'#22c55e', fontSize:10, fontWeight:600 }}>{username}</span>
+                <span style={{ color:th.textMuted, fontSize:10 }}>· {messages.filter(m=>!m.deleted&&!m.deletedFor?.includes(username)).length} msgs</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div style={{ display:'flex',gap:6,alignItems:'center' }}>
-          {/* Theme picker */}
-          <button onClick={()=>setShowTheme(v=>!v)} style={{ width:32,height:32,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}`,cursor:'pointer',fontSize:15 }} title="Change Theme">{th.icon}</button>
-          {isAdmin&&<button onClick={clearChat} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 9px',borderRadius:8,background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.2)',color:'#f87171',fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit' }}><XCircle size={11}/>Clear</button>}
-          <button onClick={toggleAdmin} style={{ width:32,height:32,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'all .2s',background:isAdmin?'rgba(251,191,36,.15)':th.btnGlass,border:isAdmin?'1px solid rgba(251,191,36,.3)':`1px solid ${th.btnGlassBorder}` }}>
-            {isAdmin?<Unlock size={13} style={{ color:'#fbbf24' }}/>:<Lock size={13} style={{ color:th.iconMuted }}/>}
+        <div style={{ display:'flex', gap:7, alignItems:'center' }}>
+          <button onClick={() => { setSearchMode(v=>!v); setSearchQ(''); }}
+            style={{ ...iconBtn(searchMode) }} title="Search messages">
+            <Search size={15} style={{ color: searchMode ? th.accentLight : th.iconMuted }}/>
           </button>
-          <button onClick={handleLogout} style={{ width:32,height:32,borderRadius:9,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(239,68,68,.08)',border:'1px solid rgba(239,68,68,.15)',cursor:'pointer' }}>
-            <LogOut size={13} style={{ color:'#f87171' }}/>
+          <button onClick={() => setShowTheme(v => !v)} style={{ ...iconBtn(false) }} title="Theme">{th.icon}</button>
+          <button onClick={toggleAdmin}
+            style={{ ...iconBtn(isAdmin), background: isAdmin ? 'rgba(251,191,36,.2)' : th.glass, border: isAdmin ? '1px solid rgba(251,191,36,.4)' : '1px solid ' + th.glassBorder }}>
+            {isAdmin ? <Unlock size={14} style={{ color:'#fbbf24' }}/> : <Lock size={14} style={{ color:th.iconMuted }}/>}
           </button>
+          <div style={{ position:'relative' }}>
+            <button onClick={e=>{e.stopPropagation();setShowMoreMenu(v=>!v);}} style={{ ...iconBtn(false) }}>
+              <MoreVertical size={15} style={{ color:th.iconMuted }}/>
+            </button>
+            {showMoreMenu && (
+              <div onClick={e=>e.stopPropagation()} style={{ position:'absolute', top:'calc(100% + 6px)', right:0, background:th.id==='light'?'#fff':'rgba(22,22,35,.98)', backdropFilter:'blur(20px)', border:'1px solid ' + th.cardBorder, borderRadius:12, overflow:'hidden', zIndex:200, minWidth:160, boxShadow:'0 12px 40px rgba(0,0,0,.4)', animation:'waFadeUp .15s ease' }}>
+                {[
+                  { label:'Clear Chat', icon:<XCircle size={13}/>, show:isAdmin, action:clearChat, danger:true },
+                  { label:'Sign Out',   icon:<LogOut size={13}/>,   show:true,    action:handleLogout, danger:false },
+                ].filter(i=>i.show).map((item,i)=>(
+                  <button key={i} onClick={()=>{item.action();setShowMoreMenu(false);}}
+                    style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'11px 14px', border:'none', cursor:'pointer', fontSize:13, fontWeight:500, background:'transparent', color:item.danger?'#f87171':th.text, fontFamily:'inherit', transition:'background .12s' }}
+                    onMouseEnter={ev=>ev.currentTarget.style.background=th.glass}
+                    onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}
+                  >{item.icon}{item.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* ══ MESSAGES ══ */}
-      <main style={{ flex:1,overflowY:'auto',padding:'14px 12px',display:'flex',flexDirection:'column',gap:11,position:'relative',zIndex:1,background:th.bg }}>
-        {messages.length===0&&(
-          <div style={{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',textAlign:'center',paddingBottom:60,animation:'fadeUp .4s ease forwards' }}>
-            <div style={{ width:60,height:60,borderRadius:18,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14,background:`${th.accent}12`,border:`1px solid ${th.accent}22` }}>
-              <MessageSquare size={26} style={{ color:`${th.accent}90` }}/>
+      {/* Search bar */}
+      {searchMode && (
+        <div style={{ background:th.header, borderBottom:'1px solid ' + th.divider, padding:'8px 14px', flexShrink:0, animation:'waFadeUp .2s ease' }}>
+          <div style={{ position:'relative', maxWidth:600, margin:'0 auto' }}>
+            <Search size={14} style={{ position:'absolute', left:11, top:11, color:th.placeholder, pointerEvents:'none' }}/>
+            <input autoFocus value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+              placeholder="Search messages..."
+              style={{ ...inp, paddingLeft:32, paddingTop:9, paddingBottom:9, fontSize:13, width:'100%', boxSizing:'border-box', borderRadius:24 }}
+              onFocus={focusIn} onBlur={focusOut}/>
+            {searchQ && <button onClick={()=>setSearchQ('')} style={{ position:'absolute', right:10, top:9, background:'none', border:'none', cursor:'pointer', color:th.textMuted, display:'flex' }}><X size={15}/></button>}
+          </div>
+          {searchQ && <p style={{ color:th.textMuted, fontSize:11, marginTop:6, textAlign:'center' }}>{visibleMessages.filter(m=>!m.deleted&&!m.deletedFor?.includes(username)).length} result(s)</p>}
+        </div>
+      )}
+
+      {/* ── MESSAGES ── */}
+      <main style={{ flex:1, overflowY:'auto', padding:'10px 4px', display:'flex', flexDirection:'column', gap:2, position:'relative', zIndex:1 }}>
+        {withSeparators.length === 0 && (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', paddingBottom:80, animation:'waFadeUp .4s ease' }}>
+            <div style={{ width:64, height:64, borderRadius:20, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14, background:th.glass, border:'1px solid ' + th.glassBorder }}>
+              <MessageSquare size={28} style={{ color:th.accent + '80' }}/>
             </div>
-            <p style={{ color:th.text,fontWeight:700,fontSize:14,margin:0 }}>No messages yet</p>
-            <p style={{ color:th.textMuted,fontSize:12,marginTop:6 }}>Start the conversation! Right-click any message for options 💬</p>
+            <p style={{ color:th.text, fontWeight:700, fontSize:15, margin:0 }}>No messages yet</p>
+            <p style={{ color:th.textMuted, fontSize:12, marginTop:6, maxWidth:240 }}>Start the conversation! Right-click any message for options.</p>
           </div>
         )}
-        {messages.map(msg=>(
-          <MessageBubble key={msg.id} msg={msg} isMe={msg.senderName===username} username={username}
-            isAdmin={isAdmin} onDelete={handleAdminDelete} onSoftDelete={handleSoftDelete} onReply={setReplyingTo}
-            getMessageTime={getMessageTime} isNew={newMsgIds.has(msg.id)} th={th}/>
-        ))}
-        {typingUsers.length>0&&(
-          <div style={{ display:'flex',justifyContent:'flex-start',animation:'fadeUp .3s ease' }}>
-            <div style={{ display:'flex',alignItems:'flex-end',gap:7 }}>
-              <div style={{ width:28,height:28,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass }}><User size={12} style={{ color:th.iconMuted }}/></div>
-              <div style={{ display:'flex',alignItems:'center',gap:5,padding:'9px 13px',borderRadius:17,borderBottomLeftRadius:4,background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}` }}>
-                <div style={{ display:'flex',gap:3 }}>{[0,1,2].map(i=><span key={i} style={{ width:6,height:6,borderRadius:'50%',background:`${th.accent}B0`,display:'block',animation:'typDot 1.4s ease infinite',animationDelay:`${i*.2}s` }}/>)}</div>
-                <span style={{ fontSize:11,color:th.textMuted,marginLeft:3 }}>{typingUsers.join(', ')} typing</span>
+        {withSeparators.map(item => item.type === 'sep'
+          ? <DateSep key={item.id} label={item.label} th={th}/>
+          : <MsgBubble key={item.msg.id} msg={item.msg}
+              isMe={item.msg.senderName === username} username={username}
+              isAdmin={isAdmin} onDelete={handleAdminDelete} onSoftDelete={handleSoftDelete}
+              onReply={setReplyingTo} isNew={newMsgIds.has(item.msg.id)}
+              th={th} onStar={handleStar} onCopy={() => {}}/>
+        )}
+        {typingUsers.length > 0 && (
+          <div style={{ display:'flex', padding:'2px 12px', animation:'waFadeUp .3s ease' }}>
+            <div style={{ display:'flex', alignItems:'flex-end', gap:6 }}>
+              <div style={{ width:26, height:26, borderRadius:'50%', background:th.glass, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <User size={12} style={{ color:th.iconMuted }}/>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:5, padding:'9px 14px', borderRadius:'18px 18px 18px 4px', background:th.id==='light'?'#fff':th.bubbleThem, border:'1px solid ' + th.bubbleThemBorder }}>
+                {[0,1,2].map(i => <span key={i} style={{ width:7, height:7, borderRadius:'50%', background:th.accent+'C0', display:'block', animation:'waTypDot 1.4s ease infinite', animationDelay:i*0.2+'s' }}/>)}
+                <span style={{ fontSize:11, color:th.textMuted, marginLeft:4 }}>{typingUsers.join(', ')} typing…</span>
               </div>
             </div>
           </div>
@@ -646,58 +1049,83 @@ export default function App() {
         <div ref={dummy}/>
       </main>
 
-      {/* ══ FOOTER ══ */}
-      <div style={{ background:th.footer,backdropFilter:'blur(24px)',WebkitBackdropFilter:'blur(24px)',borderTop:`1px solid ${th.divider}`,position:'relative',zIndex:10 }}>
-        {hasMedia&&(
-          <div style={{ padding:'8px 14px',display:'flex',alignItems:'center',gap:11,borderBottom:`1px solid ${th.divider}`,animation:'slideUp .22s ease' }}>
-            {imagePreview&&<img src={imagePreview} alt="preview" style={{ width:48,height:48,borderRadius:9,objectFit:'cover',border:`1px solid ${th.cardBorder}` }}/>}
-            {videoPreview&&<div style={{ width:48,height:48,borderRadius:9,background:th.btnGlass,border:`1px solid ${th.cardBorder}`,display:'flex',alignItems:'center',justifyContent:'center' }}><Video size={18} style={{ color:th.accentLight }}/></div>}
+      {/* ── FOOTER ── */}
+      <div style={{ background:th.footer, backdropFilter:'blur(20px)', WebkitBackdropFilter:'blur(20px)', borderTop:'1px solid ' + th.divider, position:'relative', zIndex:20, flexShrink:0 }}>
+        {/* Media preview */}
+        {hasMedia && (
+          <div style={{ padding:'8px 14px', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid ' + th.divider, animation:'waFadeUp .2s ease' }}>
+            {imagePreview && <img src={imagePreview} alt="pre" style={{ width:50, height:50, borderRadius:10, objectFit:'cover', border:'1px solid ' + th.glassBorder }}/>}
+            {videoPreview && <div style={{ width:50, height:50, borderRadius:10, background:th.glass, border:'1px solid ' + th.glassBorder, display:'flex', alignItems:'center', justifyContent:'center' }}><Video size={20} style={{ color:th.accentLight }}/></div>}
             <div style={{ flex:1 }}>
-              <p style={{ color:th.text,fontSize:12,fontWeight:700,margin:0 }}>{imagePreview?'Image':'Video'} attached</p>
-              <p style={{ color:th.textMuted,fontSize:11,marginTop:2 }}>Ready to send</p>
+              <p style={{ color:th.text, fontSize:12, fontWeight:700, margin:0 }}>{imagePreview?'Image':'Video'} ready</p>
+              <p style={{ color:th.textMuted, fontSize:11, marginTop:1 }}>Click send to share</p>
             </div>
-            <button onClick={()=>{setImagePreview(null);setVideoPreview(null);}} style={{ width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:'none',cursor:'pointer' }}><X size={12} style={{ color:th.iconMuted }}/></button>
+            <button onClick={() => { setImagePreview(null); setVideoPreview(null); }} style={{ width:26, height:26, borderRadius:'50%', background:th.glass, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <X size={13} style={{ color:th.iconMuted }}/>
+            </button>
           </div>
         )}
-        {replyingTo&&(
-          <div style={{ padding:'8px 14px',display:'flex',alignItems:'center',gap:11,borderBottom:`1px solid ${th.divider}`,animation:'slideUp .22s ease' }}>
-            <div style={{ flex:1,paddingLeft:11,borderLeft:`3px solid ${th.accent}`,background:`${th.accent}10`,borderRadius:'0 8px 8px 0',padding:'5px 9px 5px 11px' }}>
-              <p style={{ color:th.accentLight,fontSize:11,fontWeight:700,margin:0 }}>Replying to {replyingTo.displayName}</p>
-              <p style={{ color:th.textMuted,fontSize:11,marginTop:2,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis' }}>{replyingTo.text||'📷 Media'}</p>
+
+        {/* Reply preview */}
+        {replyingTo && (
+          <div style={{ padding:'8px 14px', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid ' + th.divider, animation:'waFadeUp .2s ease' }}>
+            <div style={{ flex:1, borderLeft:'3px solid ' + th.accent, paddingLeft:10, background:th.accent+'10', borderRadius:'0 8px 8px 0', padding:'5px 10px 5px 11px' }}>
+              <p style={{ color:th.accentLight, fontSize:11, fontWeight:700, margin:0 }}>Reply to {replyingTo.displayName}</p>
+              <p style={{ color:th.textMuted, fontSize:11, marginTop:1, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{replyingTo.text||'\uD83D\uDCF7 Media'}</p>
             </div>
-            <button onClick={()=>setReplyingTo(null)} style={{ width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:'none',cursor:'pointer' }}><X size={12} style={{ color:th.iconMuted }}/></button>
+            <button onClick={() => setReplyingTo(null)} style={{ width:26, height:26, borderRadius:'50%', background:th.glass, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <X size={13} style={{ color:th.iconMuted }}/>
+            </button>
           </div>
         )}
-        {showEmoji&&<div style={{ position:'relative',padding:'0 12px' }}><EmojiPicker onSelect={addEmoji} onClose={()=>setShowEmoji(false)} th={th}/></div>}
-        <div style={{ padding:'10px 12px' }}>
-          <form onSubmit={sendMessage} style={{ display:'flex',alignItems:'flex-end',gap:6,maxWidth:920,margin:'0 auto' }}>
+
+        {/* Emoji picker anchor */}
+        {showEmoji && (
+          <div style={{ position:'relative', padding:'0 14px' }}>
+            <EmojiPicker onSelect={addEmoji} onClose={() => setShowEmoji(false)} th={th}/>
+          </div>
+        )}
+
+        <div style={{ padding:'8px 12px 10px' }}>
+          <div style={{ display:'flex', alignItems:'flex-end', gap:7, maxWidth:960, margin:'0 auto' }}>
             <input type="file" ref={fileRef} onChange={handleImageSelect} style={{ display:'none' }} accept="image/*"/>
             <input type="file" ref={vidRef}  onChange={handleVideoSelect} style={{ display:'none' }} accept="video/*"/>
-            <button type="button" onClick={()=>fileRef.current?.click()} title="Share Image"
-              style={{ width:38,height:38,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}`,cursor:'pointer',flexShrink:0,transition:'all .2s' }}
-              onMouseEnter={e=>e.currentTarget.style.background=th.inputBg} onMouseLeave={e=>e.currentTarget.style.background=th.btnGlass}
-            ><ImageIcon size={15} style={{ color:th.iconMuted }}/></button>
-            <button type="button" onClick={()=>vidRef.current?.click()} title="Share Video"
-              style={{ width:38,height:38,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',background:th.btnGlass,border:`1px solid ${th.btnGlassBorder}`,cursor:'pointer',flexShrink:0,transition:'all .2s' }}
-              onMouseEnter={e=>e.currentTarget.style.background=th.inputBg} onMouseLeave={e=>e.currentTarget.style.background=th.btnGlass}
-            ><Video size={15} style={{ color:th.iconMuted }}/></button>
-            <button type="button" onClick={()=>setShowEmoji(v=>!v)}
-              style={{ width:38,height:38,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,transition:'all .2s',background:showEmoji?`${th.accent}25`:th.btnGlass,border:showEmoji?`1px solid ${th.accent}50`:`1px solid ${th.btnGlassBorder}` }}
-            ><span style={{ fontSize:17,lineHeight:1 }}>😊</span></button>
-            <textarea ref={inputRef} value={newMessage} onChange={handleTyping}
-              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(e);}}}
-              placeholder={replyingTo?`Reply to ${replyingTo.displayName}...`:`Message #${roomCode}...`}
-              rows={1}
-              style={{ flex:1,background:th.inputBg,border:`1px solid ${th.inputBorder}`,borderRadius:13,padding:'10px 13px',color:th.inputText,fontSize:14,fontFamily:'inherit',resize:'none',maxHeight:100,outline:'none',transition:'all .2s',lineHeight:1.5,overflowY:'auto' }}
-              onFocus={focusIn} onBlur={focusOut}
-              onInput={e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,100)+'px';}}
-            />
-            <button type="submit" disabled={!newMessage.trim()&&!hasMedia}
-              style={{ width:38,height:38,borderRadius:11,display:'flex',alignItems:'center',justifyContent:'center',cursor:(newMessage.trim()||hasMedia)?'pointer':'not-allowed',flexShrink:0,border:'none',transition:'all .25s',background:(newMessage.trim()||hasMedia)?th.accentGrad:'rgba(255,255,255,.06)',boxShadow:(newMessage.trim()||hasMedia)?`0 4px 20px ${th.accent}50`:'none',transform:(newMessage.trim()||hasMedia)?'scale(1)':'scale(.94)' }}>
-              {sending?<span style={{ width:15,height:15,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 1s linear infinite',display:'block' }}/>:<Send size={15} style={{ color:(newMessage.trim()||hasMedia)?'#fff':th.iconMuted,marginLeft:1 }}/>}
+
+            <button type="button" onClick={()=>fileRef.current?.click()} title="Send Image" style={{ ...iconBtn(false), height:40, width:40 }}>
+              <ImageIcon size={16} style={{ color:th.iconMuted }}/>
             </button>
-          </form>
-          <p style={{ textAlign:'center',fontSize:10,color:th.textMuted,opacity:.5,marginTop:5 }}>Enter to send · Shift+Enter for new line · Right-click message for options</p>
+            <button type="button" onClick={()=>vidRef.current?.click()} title="Send Video" style={{ ...iconBtn(false), height:40, width:40 }}>
+              <Video size={16} style={{ color:th.iconMuted }}/>
+            </button>
+            <button type="button" onClick={()=>setShowEmoji(v=>!v)} style={{ ...iconBtn(showEmoji), height:40, width:40 }} title="Emoji">
+              <span style={{ fontSize:18, lineHeight:1, fontFamily:'Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif' }}>\uD83D\uDE0A</span>
+            </button>
+
+            <div style={{ flex:1, position:'relative' }}>
+              <textarea ref={inputRef} value={newMessage} onChange={handleTyping}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                placeholder={replyingTo ? 'Reply to ' + replyingTo.displayName + '...' : 'Message #' + roomCode + '…'}
+                rows={1}
+                style={{ width:'100%', background:th.inputBg, border:'1px solid ' + th.inputBorder, borderRadius:24, padding:'10px 16px', color:th.inputText, fontSize:14, fontFamily:'inherit', resize:'none', outline:'none', transition:'border-color .2s, box-shadow .2s', lineHeight:1.5, maxHeight:110, overflowY:'auto', boxSizing:'border-box', display:'block' }}
+                onFocus={focusIn} onBlur={focusOut}
+                onInput={e => { e.target.style.height='auto'; e.target.style.height = Math.min(e.target.scrollHeight, 110) + 'px'; }}
+              />
+            </div>
+
+            <button type="button" onClick={sendMessage} disabled={!canSend}
+              style={{ width:40, height:40, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', transition:'all .2s', cursor: canSend ? 'pointer' : 'default',
+                background: canSend ? th.accentGrad : th.glass,
+                boxShadow: canSend ? '0 4px 16px ' + th.glow : 'none',
+                transform: canSend ? 'scale(1)' : 'scale(.92)' }}>
+              {sendingUI
+                ? <Spinner size={15} color="#fff"/>
+                : <Send size={15} style={{ color: canSend ? '#fff' : th.iconMuted, marginLeft:1 }}/>
+              }
+            </button>
+          </div>
+          <p style={{ textAlign:'center', fontSize:10, color:th.textMuted, opacity:.45, marginTop:5 }}>
+            Enter to send · Shift+Enter for new line · Right-click message for options
+          </p>
         </div>
       </div>
     </div>
