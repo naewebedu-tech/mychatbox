@@ -492,9 +492,6 @@ export default function App() {
 
   const th = THEMES[themeName] || THEMES.dark;
 
-  // Use ref for sending to avoid async state issues
-  const sendingRef  = useRef(false);
-  const [sendingUI, setSendingUI] = useState(false); // only for spinner display
 
   const dummy    = useRef();
   const typRef   = useRef(null);
@@ -640,48 +637,42 @@ export default function App() {
     if (vidRef.current) vidRef.current.value = '';
   };
 
-  /* ── SEND (fixed with useRef for sending state) ── */
-  const sendMessage = async (e) => {
+  const sendMessage = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const text = newMessage.trim();
     if ((!text && !imagePreview && !videoPreview) || !firebaseUser || !isLoggedIn || !roomCode) return;
-    if (sendingRef.current) return; // guard with ref, not state
 
-    sendingRef.current = true;
-    setSendingUI(true);
-
-    if (typRef.current) clearTimeout(typRef.current);
-    deleteDoc(doc(getTypRef(), username)).catch(() => {});
-
-    // Snapshot values before clearing
+    // Snapshot values before clearing UI
     const t = text, img = imagePreview, vid = videoPreview, rep = replyingTo;
+
+    // Clear input and previews instantly so user can send another message immediately
     setNewMessage('');
     setImagePreview(null);
     setVideoPreview(null);
     setReplyingTo(null);
     if (fileRef.current) fileRef.current.value = '';
     if (vidRef.current)  vidRef.current.value  = '';
-    // Reset textarea height
     if (inputRef.current) { inputRef.current.style.height = 'auto'; }
 
-    try {
-      await addDoc(getMsgsRef(), {
-        text: t, image: img || null, video: vid || null,
-        createdAt: serverTimestamp(),
-        senderName: username, displayName: username,
-        photoURL: 'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username,
-        readBy: [], deleted: false, deletedFor: [], starredBy: [],
-        replyTo: rep ? { id: rep.id, text: rep.text || (rep.image ? '\uD83D\uDCF7 Photo' : rep.video ? '\uD83C\uDFAC Video' : 'Message'), displayName: rep.displayName } : null,
-      });
-    } catch {
+    // Clear typing status
+    if (typRef.current) clearTimeout(typRef.current);
+    deleteDoc(doc(getTypRef(), username)).catch(() => {});
+
+    // Save to database asynchronously in the background
+    addDoc(getMsgsRef(), {
+      text: t, image: img || null, video: vid || null,
+      createdAt: serverTimestamp(),
+      senderName: username, displayName: username,
+      photoURL: 'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username,
+      readBy: [], deleted: false, deletedFor: [], starredBy: [],
+      replyTo: rep ? { id: rep.id, text: rep.text || (rep.image ? '\uD83D\uDCF7 Photo' : rep.video ? '\uD83C\uDFAC Video' : 'Message'), displayName: rep.displayName } : null,
+    }).catch(err => {
+      console.error("Firestore send error:", err);
       toast$('Message failed to send', 'error');
-      // Restore content on failure
-      setNewMessage(t); setImagePreview(img); setVideoPreview(vid); setReplyingTo(rep);
-    } finally {
-      sendingRef.current = false;
-      setSendingUI(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
+    });
+
+    // Refocus immediately
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   /* ── MESSAGE ACTIONS ── */
@@ -856,70 +847,212 @@ export default function App() {
   );
 
   /* ══ ROOMS SCREEN ══ */
-  if (screen === 'rooms') return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:th.bgGrad, padding:16, position:'relative' }}>
-      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
-      {showTheme && <ThemePicker current={themeName} onChange={changeTheme} onClose={() => setShowTheme(false)} th={th}/>}
+  if (screen === 'rooms') {
+    const studyRooms = [
+      { code: 'cs-lounge', name: '💻 Computer Science Lounge', desc: 'React, databases, structure design, and system architectures.', members: 42 },
+      { code: 'math-hub', name: '📐 Mathematics Hub', desc: 'Calculus, algebra, discrete math, and formula reviews.', members: 28 },
+      { code: 'physics-lab', name: '🔬 Physics Lab', desc: 'Classical mechanics, quantum dynamics, and lab reports.', members: 19 },
+      { code: 'write-right', name: '📝 Literature & Writing', desc: 'Essay peer-review, citations, grammar guides, and book clubs.', members: 31 },
+    ];
 
-      <div style={{ maxWidth:360, width:'100%', background:th.id==='light'?'#fff':th.card, backdropFilter:'blur(30px)', border:'1px solid ' + th.cardBorder, borderRadius:24, padding:28, boxShadow:'0 24px 60px rgba(0,0,0,.4)', animation:'waFadeUp .3s ease' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
-          <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-              <div style={{ width:34, height:34, borderRadius:10, background:th.accentGrad, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <GraduationCap size={18} style={{ color:'#fff' }}/>
-              </div>
-              <h2 style={{ color:th.text, fontSize:18, fontWeight:800, margin:0 }}>StudyBox</h2>
+    const studyMaterials = [
+      { title: 'React & Modern Javascript Cheat Sheet', type: 'PDF Sheet', size: '1.2 MB', desc: 'Core ES6+, Hook rules, and state paradigms.', icon: '⚡' },
+      { title: 'Calculus II Integration Techniques', type: 'Formula Sheet', size: '840 KB', desc: 'Integrals, Taylor series, and volume calculations.', icon: '📐' },
+      { title: 'Data Structures & Algorithms Cheat Sheet', type: 'PDF Book', size: '2.4 MB', desc: 'Graph, Tree, and Sorting complex patterns.', icon: '🧠' },
+      { title: 'Academic Essay Citations Template', type: 'Word Doc', size: '420 KB', desc: 'Standard MLA/APA styling and transition words.', icon: '📄' }
+    ];
+
+    const handleDownloadMaterial = (mat) => {
+      const fileContent = `StudyBox Educational Resource\n==================================\nTitle: ${mat.title}\nFormat: ${mat.type}\nFile Size: ${mat.size}\nOverview: ${mat.desc}\n\nHappy Learning!\n- The StudyBox Team`;
+      const blob = new Blob([fileContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      dlFile(url, mat.title.replace(/\s+/g, '_') + '.txt');
+      toast$(`Downloaded ${mat.title}`, 'success');
+    };
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:th.bgGrad, color:th.text, fontFamily:'inherit', overflowY:'auto', boxSizing:'border-box' }}>
+        {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
+        {showTheme && <ThemePicker current={themeName} onChange={changeTheme} onClose={() => setShowTheme(false)} th={th}/>}
+
+        {/* Global Dashboard Navigation / Header */}
+        <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px', background:th.header, backdropFilter:'blur(20px)', borderBottom:`1px solid ${th.divider}`, zIndex:50, flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ width:38, height:38, borderRadius:11, background:th.accentGrad, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 4px 15px ${th.glow}` }}>
+              <GraduationCap size={20} style={{ color:'#fff' }}/>
             </div>
-            <p style={{ color:th.textMuted, fontSize:12, margin:0 }}>Hi <span style={{ color:th.accentLight, fontWeight:700 }}>{username}</span> \uD83D\uDC4B</p>
+            <div>
+              <h2 style={{ fontSize:18, fontWeight:850, margin:0, letterSpacing:-.3 }}>StudyBox Hub</h2>
+              <p style={{ fontSize:11, color:th.textMuted, margin:0 }}>Welcome back, <span style={{ color:th.accentLight, fontWeight:750 }}>{username}</span> ✨</p>
+            </div>
           </div>
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            <button onClick={() => setShowTheme(v => !v)} style={themeBtn}>{th.icon}</button>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <button onClick={() => setShowTheme(v => !v)} style={themeBtn} title="Select Theme">{th.icon}</button>
             <img src={'https://api.dicebear.com/9.x/avataaars/svg?seed=' + username} alt="av"
-              style={{ width:40, height:40, borderRadius:'50%', boxShadow:'0 0 0 2px ' + th.accent+'70' }}/>
+              style={{ width:36, height:36, borderRadius:'50%', boxShadow:`0 0 0 2px ${th.accent}70` }}/>
+            <button onClick={handleLogout}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', borderRadius:10, border:`1px solid ${th.glassBorder}`, background:th.glass, color:th.text, fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.12)'; e.currentTarget.style.color = '#f87171'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.2)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = th.glass; e.currentTarget.style.color = th.text; e.currentTarget.style.borderColor = th.glassBorder; }}
+            >
+              <LogOut size={13}/>
+              <span>Sign Out</span>
+            </button>
           </div>
-        </div>
+        </header>
 
-        <label style={{ fontSize:10, fontWeight:700, color:th.textMuted, display:'flex', alignItems:'center', gap:5, marginBottom:8, letterSpacing:.7 }}><Lock size={10}/> PRIVATE STUDY ROOM</label>
-        <form onSubmit={handleJoinRoom} style={{ display:'flex', gap:8, marginBottom:18 }}>
-          <div style={{ position:'relative', flex:1 }}>
-            <Hash size={13} style={{ position:'absolute', left:11, top:13, color:th.placeholder, pointerEvents:'none' }}/>
-            <input autoFocus value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Enter room or class code..." style={inp} onFocus={focusIn} onBlur={focusOut}/>
+        {/* Dashboard Main Content Area */}
+        <main style={{ flex:1, width:'100%', maxWidth:1200, margin:'0 auto', padding:'24px 16px 40px', boxSizing:'border-box', display:'flex', flexDirection:'column', gap:28 }}>
+          
+          {/* Welcome Dashboard Banner */}
+          <div style={{ background:th.accentGrad, borderRadius:20, padding:'24px 28px', color:'#fff', position:'relative', overflow:'hidden', boxShadow:`0 10px 30px ${th.glow}` }}>
+            <div style={{ position:'absolute', top:-40, right:-40, width:150, height:150, borderRadius:'50%', background:'rgba(255,255,255,.07)' }}/>
+            <div style={{ position:'absolute', bottom:-20, left:'30%', width:100, height:100, borderRadius:'50%', background:'rgba(255,255,255,.04)' }}/>
+            <h1 style={{ fontSize:22, fontWeight:800, margin:'0 0 6px' }}>Ready to Ace Your Studies? 🎓</h1>
+            <p style={{ opacity:0.85, fontSize:13, margin:'0 0 16px', maxWidth:600 }}>Join a subject-specific study room to collaborate with peers, ask questions, or download helpful materials compiled by students.</p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:24 }}>
+              <div>
+                <span style={{ fontSize:10, textTransform:'uppercase', opacity:0.75, letterSpacing:.8 }}>Current User</span>
+                <p style={{ margin:'2px 0 0', fontWeight:800, fontSize:14 }}>{username}</p>
+              </div>
+              <div style={{ width:1, background:'rgba(255,255,255,.2)' }}/>
+              <div>
+                <span style={{ fontSize:10, textTransform:'uppercase', opacity:0.75, letterSpacing:.8 }}>Active Status</span>
+                <p style={{ margin:'2px 0 0', fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:5 }}>
+                  <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', display:'inline-block' }}/> Studying
+                </p>
+              </div>
+            </div>
           </div>
-          <button type="submit" disabled={!roomInput.trim()} style={{ background:th.accentGrad, border:'none', borderRadius:12, color:'#fff', padding:'11px 14px', cursor:'pointer', display:'flex', alignItems:'center', opacity:roomInput.trim()?1:.4 }}>
-            <ArrowRight size={16}/>
-          </button>
-        </form>
 
-        <div style={{ display:'flex', alignItems:'center', gap:12, margin:'16px 0' }}>
-          <div style={{ flex:1, height:1, background:th.divider }}/><span style={{ color:th.textMuted, fontSize:10 }}>OR</span><div style={{ flex:1, height:1, background:th.divider }}/>
-        </div>
-
-        <button onClick={joinPublicRoom}
-          style={{ width:'100%', padding:'13px 14px', borderRadius:14, display:'flex', alignItems:'center', gap:12, cursor:'pointer', background:'rgba(59,130,246,.09)', border:'1px solid rgba(59,130,246,.22)', transition:'all .18s', marginBottom:12 }}
-          onMouseEnter={e=>{e.currentTarget.style.background='rgba(59,130,246,.18)';e.currentTarget.style.transform='translateY(-1px)';}}
-          onMouseLeave={e=>{e.currentTarget.style.background='rgba(59,130,246,.09)';e.currentTarget.style.transform='translateY(0)';}}>
-          <div style={{ width:40, height:40, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#3b82f6,#2563eb)', flexShrink:0 }}><Globe size={18} style={{ color:'#fff' }}/></div>
-          <div style={{ textAlign:'left', flex:1 }}>
-            <p style={{ color:th.text, fontWeight:700, fontSize:13, margin:0 }}>Open Study Hall</p>
-            <p style={{ color:th.textMuted, fontSize:11, marginTop:2 }}>Public · Anyone can join</p>
+          {/* Quick Custom Room Join & Search */}
+          <div style={{ background: th.id==='light'?'#fff':th.card, border:`1px solid ${th.cardBorder}`, borderRadius:18, padding:20, backdropFilter:'blur(20px)', boxShadow:'0 10px 30px rgba(0,0,0,.08)' }}>
+            <h3 style={{ fontSize:14, fontWeight:800, margin:'0 0 12px', display:'flex', alignItems:'center', gap:7 }}><Lock size={14} style={{ color:th.accentLight }}/> Join Custom Private Study Room</h3>
+            <form onSubmit={handleJoinRoom} style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+              <div style={{ position:'relative', flex:1, minWidth:240 }}>
+                <Hash size={14} style={{ position:'absolute', left:14, top:13, color:th.placeholder, pointerEvents:'none' }}/>
+                <input autoFocus value={roomInput} onChange={e=>setRoomInput(e.target.value)} placeholder="Type custom room or class code (e.g. project-team-3)..." style={{ ...inp, paddingLeft:36 }} onFocus={focusIn} onBlur={focusOut}/>
+              </div>
+              <button type="submit" disabled={!roomInput.trim()} 
+                style={{ background:th.accentGrad, border:'none', borderRadius:12, color:'#fff', fontWeight:700, padding:'12px 20px', cursor:'pointer', display:'flex', alignItems:'center', gap:8, transition:'opacity .2s', opacity:roomInput.trim()?1:.45, boxShadow:`0 4px 15px ${th.glow}` }}>
+                <span>Join Room</span>
+                <ArrowRight size={16}/>
+              </button>
+            </form>
           </div>
-          <ArrowRight size={13} style={{ color:th.textMuted }}/>
-        </button>
 
-        <button onClick={handleLogout}
-          style={{ width:'100%', padding:'10px', borderRadius:11, display:'flex', alignItems:'center', justifyContent:'center', gap:7, cursor:'pointer', background:'rgba(239,68,68,.07)', border:'1px solid rgba(239,68,68,.15)', color:'rgba(239,68,68,.8)', fontSize:13, fontWeight:600, fontFamily:'inherit', transition:'all .18s' }}
-          onMouseEnter={e=>{e.currentTarget.style.background='rgba(239,68,68,.15)';e.currentTarget.style.color='#f87171';}}
-          onMouseLeave={e=>{e.currentTarget.style.background='rgba(239,68,68,.07)';e.currentTarget.style.color='rgba(239,68,68,.8)';}}>
-          <LogOut size={14}/> Sign Out
-        </button>
+          {/* Grid Layout: Left Column (Rooms), Right Column (Materials) */}
+          <div style={{ display:'flex', flexWrap:'wrap', gap:28 }}>
+            
+            {/* Study Rooms Column */}
+            <div style={{ flex:'1 1 550px', display:'flex', flexDirection:'column', gap:16 }}>
+              <h3 style={{ fontSize:16, fontWeight:850, margin:0, display:'flex', alignItems:'center', gap:8 }}>
+                <Users size={18} style={{ color:th.accentLight }}/>
+                <span>Active Study Rooms</span>
+              </h3>
+              
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:16 }}>
+                
+                {/* Predefined rooms */}
+                {studyRooms.map(rm => (
+                  <div key={rm.code} onClick={() => { setRoomCode(rm.code); setScreen('chat'); }}
+                    style={{ background: th.id==='light'?'#fff':th.card, border:`1px solid ${th.cardBorder}`, borderRadius:16, padding:20, cursor:'pointer', transition:'all .22s cubic-bezier(0.4, 0, 0.2, 1)', display:'flex', flexDirection:'column', justifyContent:'space-between', gap:12, position:'relative', overflow:'hidden' }}
+                    className="wa-room-card"
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.borderColor = th.accent; e.currentTarget.style.boxShadow = `0 8px 24px ${th.glow}`; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.borderColor = th.cardBorder; e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    <div>
+                      <h4 style={{ color:th.text, fontSize:15, fontWeight:800, margin:'0 0 6px' }}>{rm.name}</h4>
+                      <p style={{ color:th.textMuted, fontSize:12, lineHeight:1.45, margin:0 }}>{rm.desc}</p>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', borderTop:`1px solid ${th.divider}`, paddingTop:10, marginTop:4 }}>
+                      <span style={{ fontSize:11, color:th.textMuted, display:'flex', alignItems:'center', gap:4 }}>
+                        <span style={{ width:6, height:6, borderRadius:'50%', background:'#22c55e', display:'inline-block' }}/>
+                        {rm.members} Active
+                      </span>
+                      <span style={{ fontSize:11, color:th.accentLight, fontWeight:800, display:'flex', alignItems:'center', gap:2 }}>
+                        Enter Room <ArrowRight size={12}/>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Open Study Hall Room (Public) */}
+                <div onClick={joinPublicRoom}
+                  style={{ background: 'rgba(59,130,246,.08)', border:'1px solid rgba(59,130,246,.25)', borderRadius:16, padding:20, cursor:'pointer', transition:'all .22s', display:'flex', flexDirection:'column', justifyContent:'space-between', gap:12 }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.background = 'rgba(59,130,246,.14)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(59,130,246,.15)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(59,130,246,.08)'; e.currentTarget.style.boxShadow = 'none'; }}
+                >
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                      <div style={{ width:24, height:24, borderRadius:6, background:'linear-gradient(135deg,#3b82f6,#1d4ed8)', display:'flex', alignItems:'center', justifyContent:'center' }}><Globe size={13} style={{ color:'#fff' }}/></div>
+                      <h4 style={{ color:th.text, fontSize:15, fontWeight:800, margin:0 }}>Open Study Hall</h4>
+                    </div>
+                    <p style={{ color:th.textMuted, fontSize:12, lineHeight:1.45, margin:0 }}>Public multi-disciplinary room. Discuss general academic questions and coordinate teams.</p>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', borderTop:`1px solid ${th.divider}`, paddingTop:10 }}>
+                    <span style={{ fontSize:11, color:th.textMuted, display:'flex', alignItems:'center', gap:4 }}>
+                      <span style={{ width:6, height:6, borderRadius:'50%', background:'#22c55e', display:'inline-block' }}/>
+                      105+ Online
+                    </span>
+                    <span style={{ fontSize:11, color:'#60a5fa', fontWeight:800, display:'flex', alignItems:'center', gap:2 }}>
+                      Enter Lounge <ArrowRight size={12}/>
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Study Materials Column */}
+            <div style={{ flex:'1 1 350px', display:'flex', flexDirection:'column', gap:16 }}>
+              <h3 style={{ fontSize:16, fontWeight:850, margin:0, display:'flex', alignItems:'center', gap:8 }}>
+                <GraduationCap size={18} style={{ color:th.accentLight }}/>
+                <span>Curated Study Materials</span>
+              </h3>
+              
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                {studyMaterials.map((mat, idx) => (
+                  <div key={idx}
+                    style={{ background: th.id==='light'?'#fff':th.card, border:`1px solid ${th.cardBorder}`, borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', gap:12, transition:'transform .15s' }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'translateX(3px)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'translateX(0)'}
+                  >
+                    <div style={{ width:38, height:38, borderRadius:10, background:th.glass, border:`1px solid ${th.glassBorder}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>
+                      {mat.icon}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:9, fontWeight:800, padding:'1px 5px', borderRadius:4, background:th.accent+'22', color:th.accentLight, textTransform:'uppercase' }}>{mat.type}</span>
+                        <span style={{ fontSize:9, color:th.textMuted }}>{mat.size}</span>
+                      </div>
+                      <h4 style={{ color:th.text, fontSize:12, fontWeight:750, margin:'3px 0 1px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{mat.title}</h4>
+                      <p style={{ color:th.textMuted, fontSize:11, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{mat.desc}</p>
+                    </div>
+                    <button onClick={() => handleDownloadMaterial(mat)}
+                      style={{ width:32, height:32, borderRadius:8, background:th.glass, border:`1px solid ${th.glassBorder}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:th.text, transition:'all .15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = th.accentGrad; e.currentTarget.style.color = '#fff'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = th.glass; e.currentTarget.style.color = th.text; }}
+                      title="Download resource"
+                    >
+                      <Download size={14}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+        </main>
       </div>
-    </div>
-  );
+    );
+  }
 
   /* ══ CHAT SCREEN ══ */
   const isPublic = roomCode === 'public';
   const hasMedia = !!imagePreview || !!videoPreview;
-  const canSend  = (newMessage.trim() || hasMedia) && !sendingUI;
+  const canSend  = (newMessage.trim() || hasMedia);
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:th.chatBg, position:'relative', overflow:'hidden' }}
@@ -1117,10 +1250,7 @@ export default function App() {
                 background: canSend ? th.accentGrad : th.glass,
                 boxShadow: canSend ? '0 4px 16px ' + th.glow : 'none',
                 transform: canSend ? 'scale(1)' : 'scale(.92)' }}>
-              {sendingUI
-                ? <Spinner size={15} color="#fff"/>
-                : <Send size={15} style={{ color: canSend ? '#fff' : th.iconMuted, marginLeft:1 }}/>
-              }
+              <Send size={15} style={{ color: canSend ? '#fff' : th.iconMuted, marginLeft:1 }}/>
             </button>
           </div>
           <p style={{ textAlign:'center', fontSize:10, color:th.textMuted, opacity:.45, marginTop:5 }}>
