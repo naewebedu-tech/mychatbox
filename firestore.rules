@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───
+    
+    // Checks if the user has a valid Firebase Auth UID (even anonymous)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Ensures the creation time perfectly matches the server's clock,
+    // preventing users from forging messages from the past or future.
+    function isNow() {
+      return request.resource.data.createdAt == request.time;
+    }
+
+    // ─── COLLECTION RULES ───
+
+    // 1. User Authentication Data
+    match /chat_users/{username} {
+      // Anyone can read this (required for your custom login logic to check passwords)
+      allow read: if true;
+      // You can only create an account if you include a valid server timestamp
+      allow create: if isNow() 
+                    && request.resource.data.keys().hasAll(['username', 'password', 'createdAt']);
+      // Once created, users cannot be modified or deleted (prevents password hijacking)
+      allow update, delete: if false;
+    }
+
+    // 2. Global History (brosis123)
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      // Require auth, a valid server timestamp, and a text field to create a message
+      allow create: if isAuthenticated() 
+                    && isNow()
+                    && request.resource.data.keys().hasAny(['text', 'image', 'video']);
+      // Allow updates so users can mark messages as read, starred, or deleted
+      allow update: if isAuthenticated();
+      // Allow deletion (for your Admin delete functionality)
+      allow delete: if isAuthenticated();
+    }
+
+    // 3. Global Typing Indicators
+    match /typing/{userId} {
+      // Typing uses Date.now() (a number), not a serverTimestamp
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                   && request.resource.data.timestamp is number;
+    }
+
+    // 4. Private Room Messages
+    match /rooms/{roomId}/messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() 
+                    && isNow()
+                    && request.resource.data.keys().hasAny(['text', 'image', 'video']);
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // 5. Private Room Typing Indicators
+    match /rooms/{roomId}/typing/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                   && request.resource.data.timestamp is number;
+    }
+  }
+}

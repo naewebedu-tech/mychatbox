@@ -314,3 +314,6 @@ textarea::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.4); border-rad
   0%,80%,100% { transform: scale(0.55); opacity: 0.45; }
   40%         { transform: scale(1);    opacity: 1; }
 }
+
+/* wa-msg-in: used in MsgBubble className for new messages */
+.wa-msg-in { animation: waFadeUp 0.22s ease forwards; }
